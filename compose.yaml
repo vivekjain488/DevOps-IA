@@ -1,0 +1,32 @@
+services:
+  eventpulse:
+    build: .
+    image: eventpulse:${APP_VERSION:-1.0.0}
+    container_name: eventpulse
+    ports: ["3000:3000"]
+    environment:
+      NODE_ENV: production
+      APP_VERSION: ${APP_VERSION:-1.0.0}
+      DEMO_MODE: "true"
+    volumes: ["eventpulse-data:/app/data"]
+    restart: unless-stopped
+    logging:
+      driver: splunk
+      options:
+        splunk-url: https://host.docker.internal:8088
+        splunk-token: ${SPLUNK_HEC_TOKEN}
+        splunk-insecureskipverify: "true"
+        splunk-index: container_logs
+        tag: eventpulse
+  metrics-agent:
+    build: ./metrics-agent
+    container_name: metrics-agent
+    environment:
+      TARGET_CONTAINER: eventpulse
+      SPLUNK_HEC_URL: ${SPLUNK_HEC_URL:-https://host.docker.internal:8088/services/collector/event}
+      SPLUNK_METRICS_HEC_TOKEN: ${SPLUNK_METRICS_HEC_TOKEN}
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
+    restart: unless-stopped
+    depends_on: [eventpulse]
+volumes:
+  eventpulse-data:

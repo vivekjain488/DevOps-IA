@@ -1,0 +1,10 @@
+{
+  "name": "eventpulse-server",
+  "version": "1.0.0",
+  "private": true,
+  "main": "server.js",
+  "scripts": { "start": "node server.js", "test": "jest --runInBand --coverage" },
+  "dependencies": { "better-sqlite3": "^11.7.0", "dotenv": "^16.4.7", "express": "^4.21.2", "helmet": "^8.0.0", "pino": "^9.5.0" },
+  "devDependencies": { "jest": "^29.7.0", "supertest": "^7.0.0" },
+  "jest": { "testEnvironment": "node", "collectCoverageFrom": ["**/*.js", "!server.js", "!coverage/**", "!node_modules/**"], "coverageThreshold": { "global": { "statements": 80 } } }
+}
