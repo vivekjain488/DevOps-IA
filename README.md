@@ -20,7 +20,18 @@ cd ../client && npm ci && npm run build
 
 Tests use a brand-new in-memory SQLite database and never touch the production database. For local execution, set `DATABASE_PATH=server/data/eventpulse.db` if you want the SQLite file under the repository; the default Docker path remains `/app/data/eventpulse.db`.
 
+## In-app observability
+
+The web UI includes two Splunk-backed views (they need `SPLUNK_REST_URL` and a valid `SPLUNK_REST_TOKEN`):
+
+- **`/dashboard`** — health banner, request/error/latency KPIs with prior-period deltas, traffic by outcome, status codes, average and p95 latency, slowest requests, busiest endpoints, process CPU/memory and container stats. Time range: 1h, 6h, 24h or 7d.
+- **`/logs`** — log explorer with free-text and request-ID search, level, status-class and path filters, a volume histogram, expandable entries, request tracing, live tail and CSV/JSON export.
+
+Both are served by `GET /api/observability/summary?range=` and `GET /api/observability/logs?range=&level=&status=&q=&path=&limit=`. Every filter is allow-listed or pattern-checked before it is placed in SPL, and email addresses are masked in returned log fields.
+
 ## Splunk dashboard searches
+
+For the application's service dashboard and log explorer, run `python3 scripts/configure-splunk-rest.py` and restart the Node.js server. This creates a search account restricted to `container_logs` and `container_metrics`, enables token authentication, and saves a 90-day REST token and local TLS settings in the ignored `.env`. Run it again to renew the token before expiry. HEC tokens send data to port 8088; this separate REST token searches data through port 8089. The app limits concurrent searches to three across dashboard and log requests.
 
 Create **EventPulse Container Observability Dashboard** with these panels:
 

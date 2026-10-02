@@ -1,0 +1,242 @@
+<form version="1.1" theme="dark">
+  <label>EventPulse | Application Observability</label>
+  <description>Live HTTP logs and application process metrics. Refreshes every 30 seconds. CPU and memory describe the Node.js process; error and slow-request panels include demo routes when used.</description>
+  <fieldset submitButton="false">
+    <input type="time" token="window" searchWhenChanged="true">
+      <label>Time range</label>
+      <default>
+        <earliest>-1h</earliest>
+        <latest>now</latest>
+      </default>
+    </input>
+  </fieldset>
+  <row>
+    <panel>
+      <title>Requests</title>
+      <single>
+        <search>
+          <query>index=container_logs sourcetype="eventpulse:application" | spath | foreach status duration_ms level msg method path request_id [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | stats count AS Requests</query>
+          <earliest>$window.earliest$</earliest>
+          <latest>$window.latest$</latest>
+          <refresh>30s</refresh>
+          <refreshType>delay</refreshType>
+        </search>
+        <option name="unit" />
+        <option name="drilldown">none</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Server errors</title>
+      <single>
+        <search>
+          <query>index=container_logs sourcetype="eventpulse:application" | spath | foreach status duration_ms level msg method path request_id [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | stats count(eval(status&gt;=500)) AS Errors</query>
+          <earliest>$window.earliest$</earliest>
+          <latest>$window.latest$</latest>
+          <refresh>30s</refresh>
+          <refreshType>delay</refreshType>
+        </search>
+        <option name="unit" />
+        <option name="drilldown">none</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Error rate (4xx + 5xx)</title>
+      <single>
+        <search>
+          <query>index=container_logs sourcetype="eventpulse:application" | spath | foreach status duration_ms level msg method path request_id [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | stats count AS total count(eval(status&gt;=400)) AS errors | eval Rate=if(total&gt;0,round(100*errors/total,2),0) | fields Rate</query>
+          <earliest>$window.earliest$</earliest>
+          <latest>$window.latest$</latest>
+          <refresh>30s</refresh>
+          <refreshType>delay</refreshType>
+        </search>
+        <option name="unit">%</option>
+        <option name="drilldown">none</option>
+      </single>
+    </panel>
+    <panel>
+      <title>P95 response time</title>
+      <single>
+        <search>
+          <query>index=container_logs sourcetype="eventpulse:application" | spath | foreach status duration_ms level msg method path request_id [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | stats perc95(duration_ms) AS P95 | eval P95=round(P95,2)</query>
+          <earliest>$window.earliest$</earliest>
+          <latest>$window.latest$</latest>
+          <refresh>30s</refresh>
+          <refreshType>delay</refreshType>
+        </search>
+        <option name="unit">ms</option>
+        <option name="drilldown">none</option>
+      </single>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>Requests over time</title>
+      <chart>
+        <search>
+          <query>index=container_logs sourcetype="eventpulse:application" | spath | foreach status duration_ms level msg method path request_id [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | timechart span=1m count AS Requests</query>
+          <earliest>$window.earliest$</earliest>
+          <latest>$window.latest$</latest>
+          <refresh>30s</refresh>
+          <refreshType>delay</refreshType>
+        </search>
+        <option name="charting.chart">area</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>Average and P95 response time (ms)</title>
+      <chart>
+        <search>
+          <query>index=container_logs sourcetype="eventpulse:application" | spath | foreach status duration_ms level msg method path request_id [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | timechart span=1m avg(duration_ms) AS Average perc95(duration_ms) AS P95</query>
+          <earliest>$window.earliest$</earliest>
+          <latest>$window.latest$</latest>
+          <refresh>30s</refresh>
+          <refreshType>delay</refreshType>
+        </search>
+        <option name="charting.chart">line</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>HTTP status distribution</title>
+      <chart>
+        <search>
+          <query>index=container_logs sourcetype="eventpulse:application" | spath | foreach status duration_ms level msg method path request_id [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | stats count AS Requests by status</query>
+          <earliest>$window.earliest$</earliest>
+          <latest>$window.latest$</latest>
+          <refresh>30s</refresh>
+          <refreshType>delay</refreshType>
+        </search>
+        <option name="charting.chart">column</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>Errors by route</title>
+      <table>
+        <search>
+          <query>index=container_logs sourcetype="eventpulse:application" | spath | foreach status duration_ms level msg method path request_id [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | where status&gt;=400 | stats count AS Errors by method path status | sort - Errors</query>
+          <earliest>$window.earliest$</earliest>
+          <latest>$window.latest$</latest>
+          <refresh>30s</refresh>
+          <refreshType>delay</refreshType>
+        </search>
+        <option name="count">10</option>
+        <option name="wrap">true</option>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>Process CPU (%)</title>
+      <chart>
+        <search>
+          <query>index=container_metrics sourcetype="eventpulse:application_metrics" | spath | foreach cpu_percent memory_rss_mb heap_used_mb uptime_seconds process_status [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | timechart span=30s avg(cpu_percent) AS CPU</query>
+          <earliest>$window.earliest$</earliest>
+          <latest>$window.latest$</latest>
+          <refresh>30s</refresh>
+          <refreshType>delay</refreshType>
+        </search>
+        <option name="charting.chart">line</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>Process memory (MB)</title>
+      <chart>
+        <search>
+          <query>index=container_metrics sourcetype="eventpulse:application_metrics" | spath | foreach cpu_percent memory_rss_mb heap_used_mb uptime_seconds process_status [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | timechart span=30s avg(memory_rss_mb) AS RSS avg(heap_used_mb) AS Heap</query>
+          <earliest>$window.earliest$</earliest>
+          <latest>$window.latest$</latest>
+          <refresh>30s</refresh>
+          <refreshType>delay</refreshType>
+        </search>
+        <option name="charting.chart">line</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>Telemetry freshness (seconds)</title>
+      <single>
+        <search>
+          <query>index=container_metrics sourcetype="eventpulse:application_metrics" | spath | foreach cpu_percent memory_rss_mb heap_used_mb uptime_seconds process_status [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | stats latest(_time) AS last_seen | eval Age=round(now()-last_seen,0) | fields Age</query>
+          <earliest>$window.earliest$</earliest>
+          <latest>$window.latest$</latest>
+          <refresh>30s</refresh>
+          <refreshType>delay</refreshType>
+        </search>
+        <option name="unit">s</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Process uptime</title>
+      <single>
+        <search>
+          <query>index=container_metrics sourcetype="eventpulse:application_metrics" | spath | foreach cpu_percent memory_rss_mb heap_used_mb uptime_seconds process_status [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | stats latest(uptime_seconds) AS Uptime | eval Uptime=round(Uptime,0)</query>
+          <earliest>$window.earliest$</earliest>
+          <latest>$window.latest$</latest>
+          <refresh>30s</refresh>
+          <refreshType>delay</refreshType>
+        </search>
+        <option name="unit">s</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Process status</title>
+      <single>
+        <search>
+          <query>index=container_metrics sourcetype="eventpulse:application_metrics" | spath | foreach cpu_percent memory_rss_mb heap_used_mb uptime_seconds process_status [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | stats latest(process_status) AS Status</query>
+          <earliest>$window.earliest$</earliest>
+          <latest>$window.latest$</latest>
+          <refresh>30s</refresh>
+          <refreshType>delay</refreshType>
+        </search>
+        <option name="drilldown">none</option>
+      </single>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>Busiest routes</title>
+      <table>
+        <search>
+          <query>index=container_logs sourcetype="eventpulse:application" | spath | foreach status duration_ms level msg method path request_id [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | stats count AS Requests avg(duration_ms) AS Average_ms perc95(duration_ms) AS P95_ms by method path | eval Average_ms=round(Average_ms,2),P95_ms=round(P95_ms,2) | sort - Requests</query>
+          <earliest>$window.earliest$</earliest>
+          <latest>$window.latest$</latest>
+          <refresh>30s</refresh>
+          <refreshType>delay</refreshType>
+        </search>
+        <option name="count">10</option>
+      </table>
+    </panel>
+    <panel>
+      <title>Slow requests (&gt;1 second)</title>
+      <table>
+        <search>
+          <query>index=container_logs sourcetype="eventpulse:application" | spath | foreach status duration_ms level msg method path request_id [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | where duration_ms&gt;1000 | sort - _time | table _time method path status duration_ms request_id</query>
+          <earliest>$window.earliest$</earliest>
+          <latest>$window.latest$</latest>
+          <refresh>30s</refresh>
+          <refreshType>delay</refreshType>
+        </search>
+        <option name="count">10</option>
+        <option name="wrap">true</option>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>Recent application logs</title>
+      <table>
+        <search>
+          <query>index=container_logs sourcetype="eventpulse:application" | spath | foreach status duration_ms level msg method path request_id [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | sort - _time | table _time level msg method path status duration_ms request_id</query>
+          <earliest>$window.earliest$</earliest>
+          <latest>$window.latest$</latest>
+          <refresh>30s</refresh>
+          <refreshType>delay</refreshType>
+        </search>
+        <option name="count">20</option>
+        <option name="wrap">true</option>
+      </table>
+    </panel>
+  </row>
+</form>

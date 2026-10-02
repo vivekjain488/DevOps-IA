@@ -1,7 +1,39 @@
-import React,{useEffect,useState}from'react';import{createRoot}from'react-dom/client';import'./style.css';
-const api=async(u,o)=>{const r=await fetch(u,o),b=await r.json();if(!r.ok)throw b;return b.data};const date=x=>new Intl.DateTimeFormat('en-IN',{dateStyle:'medium',timeStyle:'short'}).format(new Date(x));
-function Dashboard(){const[d,setD]=useState(),[e,setE]=useState(''),[l,setL]=useState(true);const load=()=>{setL(true);setE('');api('/api/observability/summary').then(setD).catch(x=>setE(x.error?.message||'Could not reach Splunk.')).finally(()=>setL(false))};useEffect(()=>load(),[]);const s=d?.summary||{},m=d?.metrics||{},n=x=>Number(x||0).toFixed(2);return <main><header><a className="brand" href="/">Event<span>Pulse</span></a><nav><a href="/">Events</a><button onClick={load}>{l?'Refreshing...':'Refresh data'}</button></nav></header><section className="dashhero"><p>OBSERVABILITY</p><h1>System activity, simplified.</h1><span>Last 24 hours · Secure Splunk data</span></section>{e?<section className="dasherror"><h2>Dashboard unavailable</h2><p>{e}</p><p>Confirm Splunk is running and the server has a valid REST token.</p></section>:!d?<p>Loading observability data...</p>:<><section className="kpis"><K label="Requests" value={s.requests||0}/><K label="Client errors" value={s.errors||0} tone="amber"/><K label="Server errors" value={s.serverErrors||0} tone="red"/><K label="P95 response" value={`${n(s.p95DurationMs)} ms`}/><K label="CPU now" value={`${n(m.cpuPercent)}%`}/><K label="Memory now" value={`${n(m.memoryRssMb)} MB`}/></section><section className="dashgrid"><article><h2>Requests over time</h2><div className="bars">{d.timeline.slice(-18).map((p,i)=><div key={i}><i style={{height:`${Math.max(4,Math.min(100,Number(p.requests||0)*10))}%`}}/><small>{p.requests||0}</small></div>)}</div></article><article><h2>Process health</h2><dl><dt>Heap used</dt><dd>{n(m.heapUsedMb)} MB</dd><dt>Uptime</dt><dd>{n(m.uptimeSeconds)} sec</dd><dt>Slow requests</dt><dd>{s.slowRequests||0}</dd></dl></article><article className="routes"><h2>Top routes</h2><table><thead><tr><th>Route</th><th>Requests</th><th>Errors</th><th>Average time</th></tr></thead><tbody>{d.routes.map((r,i)=><tr key={i}><td>{r.path}</td><td>{r.requests}</td><td>{r.errors}</td><td>{n(r.averageDurationMs)} ms</td></tr>)}</tbody></table></article></section><p className="updated">Last updated {date(d.generatedAt)}. Raw emails and credentials are never displayed.</p></>}</main>};function K({label,value,tone=''}){return <article className={`kpi ${tone}`}><span>{label}</span><strong>{value}</strong></article>}
-function Events(){const[events,setEvents]=useState([]),[search,setSearch]=useState(''),[health,setHealth]=useState(false),[chosen,setChosen]=useState(null),[create,setCreate]=useState(false);const load=()=>api(`/api/events?search=${encodeURIComponent(search)}`).then(setEvents);useEffect(()=>{load();api('/api/health').then(()=>setHealth(true))},[search]);if(create)return <Create back={()=>setCreate(false)} done={()=>{setCreate(false);load()}}/>;if(chosen)return <Details event={chosen} back={()=>setChosen(null)} done={load}/>;return <main><header><a className="brand" href="/">Event<span>Pulse</span></a><nav><a href="/logs-dashboard">Observability</a><button onClick={()=>setCreate(true)}>Create event</button><b className={health?'online':'offline'}>{health?'● System online':'● System checking'}</b></nav></header><section className="hero"><p>UPCOMING EXPERIENCES</p><h1>Find your next great event.</h1><input aria-label="Search events" placeholder="Search events or venues" value={search} onChange={x=>setSearch(x.target.value)}/></section><section className="grid">{events.map(e=><article className="card" key={e.id}><div className="date">{date(e.eventDate)}</div><h2>{e.title}</h2><p>{e.venue}</p><p className="muted">{e.description}</p><div className="row"><span>{e.registeredCount}/{e.capacity} registered</span><strong>{e.seatsRemaining} seats left</strong></div><div className="bar"><i style={{width:`${e.percentageFull}%`}}/></div><button onClick={()=>setChosen(e)}>View event</button></article>)}</section></main>}
-function Details({event,back,done}){const[f,setF]=useState({name:'',email:''}),[message,setMessage]=useState('');const submit=async x=>{x.preventDefault();try{await api(`/api/events/${event.id}/register`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(f)});setMessage('You are registered!');done()}catch(x){setMessage(x.error?.message||'Registration failed.')}};return <main><header><a className="brand" href="/">Event<span>Pulse</span></a></header><section className="details"><button onClick={back}>Back to events</button><h1>{event.title}</h1><p>{date(event.eventDate)} · {event.venue}</p><p>{event.description}</p><h3>{event.seatsRemaining} seats available</h3><form onSubmit={submit}><h2>Register now</h2><label>Name<input required minLength="2" value={f.name} onChange={x=>setF({...f,name:x.target.value})}/></label><label>Email<input required type="email" value={f.email} onChange={x=>setF({...f,email:x.target.value})}/></label><button disabled={!event.seatsRemaining}>{event.seatsRemaining?'Reserve my seat':'Event full'}</button>{message&&<p>{message}</p>}</form></section></main>}
-function Create({back,done}){const[f,setF]=useState({title:'',venue:'',eventDate:'',capacity:'',description:''}),[message,setMessage]=useState('');const submit=async x=>{x.preventDefault();try{await api('/api/events',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...f,capacity:Number(f.capacity),eventDate:new Date(f.eventDate).toISOString()})});done()}catch(x){setMessage(x.error?.message||'Could not create event.')}};return <main><header><a className="brand" href="/">Event<span>Pulse</span></a></header><section className="details"><button onClick={back}>Back to events</button><h1>Create event</h1><form onSubmit={submit}>{[['title','Title'],['venue','Venue'],['eventDate','Date and time'],['capacity','Capacity']].map(([k,l])=><label key={k}>{l}<input required type={k==='eventDate'?'datetime-local':k==='capacity'?'number':'text'} value={f[k]} onChange={x=>setF({...f,[k]:x.target.value})}/></label>)}<label>Description<textarea value={f.description} onChange={x=>setF({...f,description:x.target.value})}/></label><button>Create event</button>{message&&<p>{message}</p>}</form></section></main>}
-createRoot(document.getElementById('root')).render(location.pathname==='/logs-dashboard'?<Dashboard/>:<Events/>);
+import React, { useEffect } from 'react';
+import { createRoot } from 'react-dom/client';
+import { MotionConfig } from 'motion/react';
+import './tailwind.css';
+import './style.css';
+import { useLocation, linkProps } from './lib';
+import { Shell, Empty } from './ui';
+import { EventsPage, EventDetailPage, CreateEventPage } from './events';
+import { DashboardPage } from './dashboard';
+import { LogsPage } from './logs';
+
+const TITLES = { events: 'Events', create: 'Create event', detail: 'Event', dashboard: 'Dashboard', logs: 'Logs', missing: 'Not found' };
+
+function route(path) {
+  if (path === '/' || path === '/events') return { name: 'events' };
+  if (path === '/events/new') return { name: 'create' };
+  const detail = path.match(/^\/events\/(\d+)$/);
+  if (detail) return { name: 'detail', id: detail[1] };
+  if (path === '/dashboard' || path === '/logs-dashboard') return { name: 'dashboard', wide: true };
+  if (path === '/logs') return { name: 'logs', wide: true };
+  return { name: 'missing' };
+}
+
+function App() {
+  const { path, search } = useLocation(), current = route(path);
+  useEffect(() => { document.title = `${TITLES[current.name]} · EventPulse`; }, [current.name]);
+  return (
+    <Shell path={path} wide={current.wide}>
+      {current.name === 'events' && <EventsPage />}
+      {current.name === 'create' && <CreateEventPage />}
+      {current.name === 'detail' && <EventDetailPage key={current.id} id={current.id} />}
+      {current.name === 'dashboard' && <DashboardPage search={search} />}
+      {current.name === 'logs' && <LogsPage key={search} search={search} />}
+      {current.name === 'missing' && <Empty icon="alert" title="Page not found">That page doesn’t exist. <a {...linkProps('/')}>Back to events</a></Empty>}
+    </Shell>
+  );
+}
+
+createRoot(document.getElementById('root')).render(<MotionConfig reducedMotion="user"><App /></MotionConfig>);

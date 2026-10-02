@@ -1,0 +1,22 @@
+/* Tailwind utilities for the Aceternity components. Preflight is skipped so the app's own base styles stay intact. */
+@layer theme, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities) source(none);
+@source './components';
+
+/* `dark:` follows the app theme: an explicit data-theme wins, otherwise the OS preference. */
+@custom-variant dark {
+  &:where([data-theme='dark'], [data-theme='dark'] *) { @slot; }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme='light']), :root:not([data-theme='light']) *) { @slot; }
+  }
+}
+
+@theme inline {
+  --animate-cell-ripple: cell-ripple var(--duration, 200ms) ease-out none 1 var(--delay, 0ms);
+  @keyframes cell-ripple {
+    0% { opacity: 0.4; }
+    50% { opacity: 0.8; }
+    100% { opacity: 0.4; }
+  }
+}

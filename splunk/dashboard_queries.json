@@ -1,0 +1,66 @@
+[
+  {
+    "title": "Requests",
+    "query": "index=container_logs sourcetype=\"eventpulse:application\" | spath | foreach status duration_ms level msg method path request_id [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | stats count AS Requests"
+  },
+  {
+    "title": "Server errors",
+    "query": "index=container_logs sourcetype=\"eventpulse:application\" | spath | foreach status duration_ms level msg method path request_id [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | stats count(eval(status>=500)) AS Errors"
+  },
+  {
+    "title": "Error rate (4xx + 5xx)",
+    "query": "index=container_logs sourcetype=\"eventpulse:application\" | spath | foreach status duration_ms level msg method path request_id [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | stats count AS total count(eval(status>=400)) AS errors | eval Rate=if(total>0,round(100*errors/total,2),0) | fields Rate"
+  },
+  {
+    "title": "P95 response time",
+    "query": "index=container_logs sourcetype=\"eventpulse:application\" | spath | foreach status duration_ms level msg method path request_id [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | stats perc95(duration_ms) AS P95 | eval P95=round(P95,2)"
+  },
+  {
+    "title": "Requests over time",
+    "query": "index=container_logs sourcetype=\"eventpulse:application\" | spath | foreach status duration_ms level msg method path request_id [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | timechart span=1m count AS Requests"
+  },
+  {
+    "title": "Average and P95 response time (ms)",
+    "query": "index=container_logs sourcetype=\"eventpulse:application\" | spath | foreach status duration_ms level msg method path request_id [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | timechart span=1m avg(duration_ms) AS Average perc95(duration_ms) AS P95"
+  },
+  {
+    "title": "HTTP status distribution",
+    "query": "index=container_logs sourcetype=\"eventpulse:application\" | spath | foreach status duration_ms level msg method path request_id [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | stats count AS Requests by status"
+  },
+  {
+    "title": "Errors by route",
+    "query": "index=container_logs sourcetype=\"eventpulse:application\" | spath | foreach status duration_ms level msg method path request_id [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | where status>=400 | stats count AS Errors by method path status | sort - Errors"
+  },
+  {
+    "title": "Process CPU (%)",
+    "query": "index=container_metrics sourcetype=\"eventpulse:application_metrics\" | spath | foreach cpu_percent memory_rss_mb heap_used_mb uptime_seconds process_status [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | timechart span=30s avg(cpu_percent) AS CPU"
+  },
+  {
+    "title": "Process memory (MB)",
+    "query": "index=container_metrics sourcetype=\"eventpulse:application_metrics\" | spath | foreach cpu_percent memory_rss_mb heap_used_mb uptime_seconds process_status [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | timechart span=30s avg(memory_rss_mb) AS RSS avg(heap_used_mb) AS Heap"
+  },
+  {
+    "title": "Telemetry freshness (seconds)",
+    "query": "index=container_metrics sourcetype=\"eventpulse:application_metrics\" | spath | foreach cpu_percent memory_rss_mb heap_used_mb uptime_seconds process_status [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | stats latest(_time) AS last_seen | eval Age=round(now()-last_seen,0) | fields Age"
+  },
+  {
+    "title": "Process uptime",
+    "query": "index=container_metrics sourcetype=\"eventpulse:application_metrics\" | spath | foreach cpu_percent memory_rss_mb heap_used_mb uptime_seconds process_status [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | stats latest(uptime_seconds) AS Uptime | eval Uptime=round(Uptime,0)"
+  },
+  {
+    "title": "Process status",
+    "query": "index=container_metrics sourcetype=\"eventpulse:application_metrics\" | spath | foreach cpu_percent memory_rss_mb heap_used_mb uptime_seconds process_status [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | stats latest(process_status) AS Status"
+  },
+  {
+    "title": "Busiest routes",
+    "query": "index=container_logs sourcetype=\"eventpulse:application\" | spath | foreach status duration_ms level msg method path request_id [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | stats count AS Requests avg(duration_ms) AS Average_ms perc95(duration_ms) AS P95_ms by method path | eval Average_ms=round(Average_ms,2),P95_ms=round(P95_ms,2) | sort - Requests"
+  },
+  {
+    "title": "Slow requests (>1 second)",
+    "query": "index=container_logs sourcetype=\"eventpulse:application\" | spath | foreach status duration_ms level msg method path request_id [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | where duration_ms>1000 | sort - _time | table _time method path status duration_ms request_id"
+  },
+  {
+    "title": "Recent application logs",
+    "query": "index=container_logs sourcetype=\"eventpulse:application\" | spath | foreach status duration_ms level msg method path request_id [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | sort - _time | table _time level msg method path status duration_ms request_id"
+  }
+]
