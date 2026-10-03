@@ -1,66 +1,82 @@
 [
   {
-    "title": "Requests",
-    "query": "index=container_logs sourcetype=\"eventpulse:application\" | spath | foreach status duration_ms level msg method path request_id [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | stats count AS Requests"
+    "title": "Jobs created",
+    "query": "index=container_logs sourcetype=\"docuflow:application\" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(event) | where event=\"job_queued\" | stats count AS Jobs"
   },
   {
-    "title": "Server errors",
-    "query": "index=container_logs sourcetype=\"eventpulse:application\" | spath | foreach status duration_ms level msg method path request_id [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | stats count(eval(status>=500)) AS Errors"
+    "title": "Jobs completed",
+    "query": "index=container_logs sourcetype=\"docuflow:application\" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(event) | where event=\"job_completed\" | stats count AS Completed"
   },
   {
-    "title": "Error rate (4xx + 5xx)",
-    "query": "index=container_logs sourcetype=\"eventpulse:application\" | spath | foreach status duration_ms level msg method path request_id [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | stats count AS total count(eval(status>=400)) AS errors | eval Rate=if(total>0,round(100*errors/total,2),0) | fields Rate"
+    "title": "Jobs failed",
+    "query": "index=container_logs sourcetype=\"docuflow:application\" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(event) | where event=\"job_failed\" | stats count AS Failed"
   },
   {
-    "title": "P95 response time",
-    "query": "index=container_logs sourcetype=\"eventpulse:application\" | spath | foreach status duration_ms level msg method path request_id [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | stats perc95(duration_ms) AS P95 | eval P95=round(P95,2)"
+    "title": "Failure rate",
+    "query": "index=container_logs sourcetype=\"docuflow:application\" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(event) | stats count(eval(event=\"job_completed\")) AS ok count(eval(event=\"job_failed\")) AS failed | eval Rate=if(ok+failed>0,round(100*failed/(ok+failed),1),0) | fields Rate"
   },
   {
-    "title": "Requests over time",
-    "query": "index=container_logs sourcetype=\"eventpulse:application\" | spath | foreach status duration_ms level msg method path request_id [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | timechart span=1m count AS Requests"
+    "title": "Average processing time",
+    "query": "index=container_logs sourcetype=\"docuflow:application\" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(event) | stats avg(eval(if(event=\"job_completed\",processing_duration_ms,null()))) AS Average | eval Average=round(Average,1)"
   },
   {
-    "title": "Average and P95 response time (ms)",
-    "query": "index=container_logs sourcetype=\"eventpulse:application\" | spath | foreach status duration_ms level msg method path request_id [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | timechart span=1m avg(duration_ms) AS Average perc95(duration_ms) AS P95"
+    "title": "P95 processing time",
+    "query": "index=container_logs sourcetype=\"docuflow:application\" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(event) | stats perc95(eval(if(event=\"job_completed\",processing_duration_ms,null()))) AS P95 | eval P95=round(P95,1)"
   },
   {
-    "title": "HTTP status distribution",
-    "query": "index=container_logs sourcetype=\"eventpulse:application\" | spath | foreach status duration_ms level msg method path request_id [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | stats count AS Requests by status"
+    "title": "Jobs created, completed and failed over time",
+    "query": "index=container_logs sourcetype=\"docuflow:application\" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(event) | timechart span=1m count(eval(event=\"job_queued\")) AS Created count(eval(event=\"job_completed\")) AS Completed count(eval(event=\"job_failed\")) AS Failed"
   },
   {
-    "title": "Errors by route",
-    "query": "index=container_logs sourcetype=\"eventpulse:application\" | spath | foreach status duration_ms level msg method path request_id [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | where status>=400 | stats count AS Errors by method path status | sort - Errors"
+    "title": "Job status distribution",
+    "query": "index=container_logs sourcetype=\"docuflow:application\" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(event) | where isnotnull(job_id) AND isnotnull(job_status) | eval rank=case(job_status=\"QUEUED\",1,job_status=\"PROCESSING\",2,job_status=\"COMPLETED\",3,job_status=\"FAILED\",4) | stats max(rank) AS rank BY job_id | eval Status=case(rank=1,\"QUEUED\",rank=2,\"PROCESSING\",rank=3,\"COMPLETED\",rank=4,\"FAILED\") | stats count BY Status"
   },
   {
-    "title": "Process CPU (%)",
-    "query": "index=container_metrics sourcetype=\"eventpulse:application_metrics\" | spath | foreach cpu_percent memory_rss_mb heap_used_mb uptime_seconds process_status [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | timechart span=30s avg(cpu_percent) AS CPU"
+    "title": "Average and P95 processing duration (ms)",
+    "query": "index=container_logs sourcetype=\"docuflow:application\" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(event) | timechart span=1m avg(eval(if(event=\"job_completed\",processing_duration_ms,null()))) AS Average perc95(eval(if(event=\"job_completed\",processing_duration_ms,null()))) AS P95"
   },
   {
-    "title": "Process memory (MB)",
-    "query": "index=container_metrics sourcetype=\"eventpulse:application_metrics\" | spath | foreach cpu_percent memory_rss_mb heap_used_mb uptime_seconds process_status [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | timechart span=30s avg(memory_rss_mb) AS RSS avg(heap_used_mb) AS Heap"
+    "title": "Queue time: average and P95 (ms)",
+    "query": "index=container_logs sourcetype=\"docuflow:application\" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(event) | timechart span=1m avg(eval(if(event=\"job_started\",queue_time_ms,null()))) AS Average perc95(eval(if(event=\"job_started\",queue_time_ms,null()))) AS P95"
   },
   {
-    "title": "Telemetry freshness (seconds)",
-    "query": "index=container_metrics sourcetype=\"eventpulse:application_metrics\" | spath | foreach cpu_percent memory_rss_mb heap_used_mb uptime_seconds process_status [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | stats latest(_time) AS last_seen | eval Age=round(now()-last_seen,0) | fields Age"
+    "title": "Most common failure reasons",
+    "query": "index=container_logs sourcetype=\"docuflow:application\" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(event) | where event=\"job_failed\" | stats count AS Failures BY failure_reason | sort - Failures"
   },
   {
-    "title": "Process uptime",
-    "query": "index=container_metrics sourcetype=\"eventpulse:application_metrics\" | spath | foreach cpu_percent memory_rss_mb heap_used_mb uptime_seconds process_status [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | stats latest(uptime_seconds) AS Uptime | eval Uptime=round(Uptime,0)"
+    "title": "File type distribution",
+    "query": "index=container_logs sourcetype=\"docuflow:application\" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(event) | where event=\"upload_received\" OR (event=\"job_queued\" AND isnotnull(demo)) | stats count BY file_type"
   },
   {
-    "title": "Process status",
-    "query": "index=container_metrics sourcetype=\"eventpulse:application_metrics\" | spath | foreach cpu_percent memory_rss_mb heap_used_mb uptime_seconds process_status [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | stats latest(process_status) AS Status"
+    "title": "API and worker CPU (%)",
+    "query": "index=container_metrics sourcetype=\"docuflow:container_metrics\" | spath | foreach container_name container_status restart_count cpu_percent memory_usage_mb memory_percent network_rx_rate_bytes_per_second network_tx_rate_bytes_per_second [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | timechart span=30s avg(cpu_percent) BY container_name"
   },
   {
-    "title": "Busiest routes",
-    "query": "index=container_logs sourcetype=\"eventpulse:application\" | spath | foreach status duration_ms level msg method path request_id [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | stats count AS Requests avg(duration_ms) AS Average_ms perc95(duration_ms) AS P95_ms by method path | eval Average_ms=round(Average_ms,2),P95_ms=round(P95_ms,2) | sort - Requests"
+    "title": "API and worker memory (MB)",
+    "query": "index=container_metrics sourcetype=\"docuflow:container_metrics\" | spath | foreach container_name container_status restart_count cpu_percent memory_usage_mb memory_percent network_rx_rate_bytes_per_second network_tx_rate_bytes_per_second [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | timechart span=30s avg(memory_usage_mb) BY container_name"
   },
   {
-    "title": "Slow requests (>1 second)",
-    "query": "index=container_logs sourcetype=\"eventpulse:application\" | spath | foreach status duration_ms level msg method path request_id [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | where duration_ms>1000 | sort - _time | table _time method path status duration_ms request_id"
+    "title": "Container status and restart count",
+    "query": "index=container_metrics sourcetype=\"docuflow:container_metrics\" | spath | foreach container_name container_status restart_count cpu_percent memory_usage_mb memory_percent network_rx_rate_bytes_per_second network_tx_rate_bytes_per_second [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | stats latest(container_status) AS Status latest(restart_count) AS Restarts latest(_time) AS LastSeen BY container_name | eval LastSeen=strftime(LastSeen,\"%Y-%m-%d %H:%M:%S\") | rename container_name AS Container"
   },
   {
-    "title": "Recent application logs",
-    "query": "index=container_logs sourcetype=\"eventpulse:application\" | spath | foreach status duration_ms level msg method path request_id [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | sort - _time | table _time level msg method path status duration_ms request_id"
+    "title": "Restart count over time",
+    "query": "index=container_metrics sourcetype=\"docuflow:container_metrics\" | spath | foreach container_name container_status restart_count cpu_percent memory_usage_mb memory_percent network_rx_rate_bytes_per_second network_tx_rate_bytes_per_second [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | timechart span=30s max(restart_count) BY container_name"
+  },
+  {
+    "title": "Network throughput (bytes/s)",
+    "query": "index=container_metrics sourcetype=\"docuflow:container_metrics\" | spath | foreach container_name container_status restart_count cpu_percent memory_usage_mb memory_percent network_rx_rate_bytes_per_second network_tx_rate_bytes_per_second [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | eval Throughput=network_rx_rate_bytes_per_second+network_tx_rate_bytes_per_second | timechart span=30s avg(Throughput) BY container_name"
+  },
+  {
+    "title": "API response time: average and P95 (ms)",
+    "query": "index=container_logs sourcetype=\"docuflow:application\" | spath | foreach status duration_ms method path service [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | timechart span=1m avg(duration_ms) AS Average perc95(duration_ms) AS P95"
+  },
+  {
+    "title": "Recent job failures",
+    "query": "index=container_logs sourcetype=\"docuflow:application\" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(event) | where event=\"job_failed\" | sort - _time | head 20 | eval Time=strftime(_time,\"%H:%M:%S\") | table Time job_id file_name failure_stage failure_reason"
+  },
+  {
+    "title": "Slowest jobs",
+    "query": "index=container_logs sourcetype=\"docuflow:application\" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ] | where isnotnull(event) | where event=\"job_completed\" | sort - processing_duration_ms | head 10 | table job_id file_name file_type queue_time_ms processing_duration_ms"
   }
 ]

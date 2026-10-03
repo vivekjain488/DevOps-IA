@@ -1,32 +1,54 @@
+# DocuFlow stack: API container + processing-worker container + metrics agent. Splunk runs separately (compose.splunk.yaml or a local install).
+x-splunk-env: &splunk-env
+  # Containers reach Splunk on the Docker host; override with DOCKER_SPLUNK_* when Splunk runs elsewhere.
+  SPLUNK_HEC_URL: ${DOCKER_SPLUNK_HEC_URL:-https://host.docker.internal:8088/services/collector/event}
+  SPLUNK_HEC_TOKEN: ${SPLUNK_HEC_TOKEN:-}
+  SPLUNK_METRICS_HEC_TOKEN: ${SPLUNK_METRICS_HEC_TOKEN:-}
+  SPLUNK_HEC_INSECURE_TLS: ${SPLUNK_HEC_INSECURE_TLS:-true}
+  APP_VERSION: ${APP_VERSION:-1.0.0}
+
 services:
-  eventpulse:
-    build: .
-    image: eventpulse:${APP_VERSION:-1.0.0}
-    container_name: eventpulse
+  api:
+    build: { context: ., dockerfile: Dockerfile }
+    image: docuflow-api:${APP_VERSION:-1.0.0}
+    container_name: docuflow-api
     ports: ["3000:3000"]
     environment:
-      NODE_ENV: production
-      APP_VERSION: ${APP_VERSION:-1.0.0}
-      DEMO_MODE: "true"
-    volumes: ["eventpulse-data:/app/data"]
+      <<: *splunk-env
+      DEMO_MODE: ${DEMO_MODE:-true}
+      SPLUNK_REST_URL: ${DOCKER_SPLUNK_REST_URL:-https://host.docker.internal:8089}
+      SPLUNK_REST_TOKEN: ${SPLUNK_REST_TOKEN:-}
+      SPLUNK_REST_INSECURE_TLS: ${SPLUNK_REST_INSECURE_TLS:-true}
+    volumes: ["docuflow-data:/app/data"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
     restart: unless-stopped
-    logging:
-      driver: splunk
-      options:
-        splunk-url: https://host.docker.internal:8088
-        splunk-token: ${SPLUNK_HEC_TOKEN}
-        splunk-insecureskipverify: "true"
-        splunk-index: container_logs
-        tag: eventpulse
+
+  worker:
+    build: { context: ., dockerfile: Dockerfile.worker }
+    image: docuflow-worker:${APP_VERSION:-1.0.0}
+    container_name: docuflow-worker
+    environment:
+      <<: *splunk-env
+      WORKER_ID: docuflow-worker
+      DEMO_SLOW_JOB_MS: ${DEMO_SLOW_JOB_MS:-8000}
+    volumes: ["docuflow-data:/app/data"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    # Restarts after the crash demo raise RestartCount, which the metrics agent reports to Splunk.
+    restart: unless-stopped
+    depends_on: [api]
+
   metrics-agent:
     build: ./metrics-agent
-    container_name: metrics-agent
+    image: docuflow-metrics-agent:${APP_VERSION:-1.0.0}
+    container_name: docuflow-metrics-agent
     environment:
-      TARGET_CONTAINER: eventpulse
-      SPLUNK_HEC_URL: ${SPLUNK_HEC_URL:-https://host.docker.internal:8088/services/collector/event}
-      SPLUNK_METRICS_HEC_TOKEN: ${SPLUNK_METRICS_HEC_TOKEN}
+      TARGET_CONTAINERS: docuflow-api,docuflow-worker
+      SPLUNK_HEC_URL: ${DOCKER_SPLUNK_HEC_URL:-https://host.docker.internal:8088/services/collector/event}
+      SPLUNK_METRICS_HEC_TOKEN: ${SPLUNK_METRICS_HEC_TOKEN:-}
     volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
     restart: unless-stopped
-    depends_on: [eventpulse]
+    depends_on: [api, worker]
+
 volumes:
-  eventpulse-data:
+  docuflow-data:

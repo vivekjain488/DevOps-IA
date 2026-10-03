@@ -1,11 +1,12 @@
 const https = require('https');
 const http = require('http');
 
-function postToHec({ event, token, index, sourcetype, source }) {
+function postToHec({ event, token, index, sourcetype, source, time }) {
   const endpoint = process.env.SPLUNK_HEC_URL;
   if (!endpoint || !token) return Promise.resolve(false);
   const url = new URL(endpoint);
-  const payload = JSON.stringify({ event, index, sourcetype, source });
+  // An explicit epoch time keeps millisecond ordering; without it Splunk stamps events to the second on arrival.
+  const payload = JSON.stringify({ ...(Number.isFinite(time) ? { time } : {}), event, index, sourcetype, source });
   const transport = url.protocol === 'https:' ? https : http;
   const options = {
     hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80), path: `${url.pathname}${url.search}`,

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 export class ApiError extends Error {
   constructor(body, status) {
     super(body?.error?.message || 'Request failed.');
-    this.status = status; this.code = body?.error?.code; this.details = body?.error?.details || [];
+    this.status = status; this.code = body?.error?.code; this.details = body?.error?.details || []; this.data = body?.data;
   }
 }
 
@@ -15,6 +15,7 @@ export async function api(url, options) {
   return body.data;
 }
 export const postJson = (url, data) => api(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+export const postForm = (url, form) => api(url, { method: 'POST', body: form });
 
 // Tiny pathname router: links call navigate(), the back button fires popstate.
 export function navigate(to) { window.history.pushState({}, '', to); window.dispatchEvent(new PopStateEvent('popstate')); window.scrollTo({ top: 0 }); }
@@ -55,6 +56,7 @@ export const fmtMs = value => { const n = num(value); return n >= 1000 ? `${(n /
 export const fmtAxisMs = value => { const n = num(value); if (n === 0) return '0'; if (n >= 1000) return `${Number((n / 1000).toFixed(1))} s`; return `${Number(n.toFixed(n < 10 ? 1 : 0))} ms`; };
 export const fmtPct = (value, digits = 1) => `${num(value).toFixed(digits)}%`;
 export const fmtBytes = value => { const n = num(value); if (n < 1024) return `${Math.round(n)} B/s`; if (n < 1048576) return `${(n / 1024).toFixed(1)} KB/s`; return `${(n / 1048576).toFixed(1)} MB/s`; };
+export const fmtSize = value => { const n = num(value); if (n < 1024) return `${Math.round(n)} B`; if (n < 1048576) return `${(n / 1024).toFixed(1)} KB`; return `${(n / 1048576).toFixed(2)} MB`; };
 export function fmtDuration(seconds) {
   const s = Math.floor(num(seconds)), d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
   if (d) return `${d}d ${h}h`; if (h) return `${h}h ${m}m`; if (m) return `${m}m ${s % 60}s`; return `${s}s`;

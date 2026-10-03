@@ -1,9 +1,11 @@
 .env
-server/data/*.db
-server/data/*.sqlite
 node_modules
 client/node_modules
 server/node_modules
 coverage
 dist
 .next
+# Local SQLite database and uploads
+server/data/
+server/server/
+smoke.csv

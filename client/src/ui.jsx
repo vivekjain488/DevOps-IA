@@ -25,7 +25,10 @@ const PATHS = {
   chevron: 'm9 18 6-6-6-6',
   server: 'M3 4h18v6H3zM3 14h18v6H3zM7 7h.01M7 17h.01',
   bolt: 'M13 2 3 14h9l-1 8 10-12h-9l1-8Z',
-  filter: 'M22 3H2l8 9.46V19l4 2v-8.54L22 3Z'
+  filter: 'M22 3H2l8 9.46V19l4 2v-8.54L22 3Z',
+  upload: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12',
+  file: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6ZM14 2v6h6M8 13h8M8 17h5',
+  list: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01'
 };
 export function Icon({ name, size = 16, className = '' }) {
   return (
@@ -36,26 +39,31 @@ export function Icon({ name, size = 16, className = '' }) {
 }
 
 function useTheme() {
-  const [theme, setTheme] = useState(() => storage('ep-theme', 'auto'));
+  const [theme, setTheme] = useState(() => storage('df-theme', 'auto'));
   useEffect(() => {
     if (theme === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', theme);
-    store('ep-theme', theme);
+    store('df-theme', theme);
   }, [theme]);
   const dark = theme === 'dark' || (theme === 'auto' && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
   return [dark, () => setTheme(dark ? 'light' : 'dark')];
 }
 
-function HealthPill() {
-  const [state, setState] = useState('checking');
-  const check = () => api('/api/health').then(() => setState('online')).catch(() => setState('offline'));
+// Reports both containers: the API answers the health check and relays the worker's last heartbeat.
+export function useHealth() {
+  const [health, setHealth] = useState({ state: 'checking' });
+  const check = () => api('/api/health').then(data => setHealth({ state: data.worker?.status === 'online' ? 'online' : 'degraded', data })).catch(() => setHealth({ state: 'offline' }));
   useEffect(() => { check(); }, []);
-  useInterval(check, 30000);
-  const text = { checking: 'Checking', online: 'All systems normal', offline: 'API unreachable' }[state];
-  return <span className={`health ${state}`} title={`API status: ${text}`}><i />{text}</span>;
+  useInterval(check, 15000);
+  return health;
+}
+function HealthPill({ health }) {
+  const text = { checking: 'Checking', online: 'API and worker online', degraded: 'Worker offline', offline: 'API unreachable' }[health.state];
+  return <span className={`health ${health.state}`} title={`Service status: ${text}`}><i />{text}</span>;
 }
 
 const NAV = [
-  { to: '/', label: 'Events', icon: 'calendar', match: path => path === '/' || path.startsWith('/events') },
+  { to: '/', label: 'Upload', icon: 'upload', match: path => path === '/' },
+  { to: '/jobs', label: 'Jobs', icon: 'list', match: path => path.startsWith('/jobs') },
   { to: '/dashboard', label: 'Dashboard', icon: 'chart', match: path => path === '/dashboard' || path === '/logs-dashboard' },
   { to: '/logs', label: 'Logs', icon: 'logs', match: path => path === '/logs' }
 ];
@@ -70,15 +78,15 @@ function useScrolled(offset = 24) {
   return scrolled;
 }
 
-export function Shell({ path, children, wide = false }) {
+export function Shell({ path, health, children, wide = false }) {
   const [dark, toggle] = useTheme(), scrolled = useScrolled();
   return (
     <div className="app">
       <header className={scrolled ? 'topbar scrolled' : 'topbar'}>
         <div className="topbar-inner">
-          <a className="brand" {...linkProps('/')} aria-label="EventPulse home">
-            <span className="brand-mark"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M6 17h5l3-7 4 13 3-6h5" /></svg></span>
-            <span>Event<b>Pulse</b></span>
+          <a className="brand" {...linkProps('/')} aria-label="DocuFlow home">
+            <span className="brand-mark"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M10 6h8l5 5v15H10zM18 6v5h5M14 17h6M14 21h4" /></svg></span>
+            <span>Docu<b>Flow</b></span>
           </a>
           <nav className="tabs" aria-label="Primary">
             {NAV.map(item => (
@@ -88,7 +96,7 @@ export function Shell({ path, children, wide = false }) {
             ))}
           </nav>
           <div className="topbar-end">
-            <HealthPill />
+            <HealthPill health={health} />
             <button className="icon-btn" onClick={toggle} aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'} title="Toggle theme">
               <Icon name={dark ? 'sun' : 'moon'} />
             </button>
@@ -96,7 +104,7 @@ export function Shell({ path, children, wide = false }) {
         </div>
       </header>
       <main className={wide ? 'page wide' : 'page'}>{children}</main>
-      <footer className="footer"><span>EventPulse · Structured logs and metrics via Splunk</span><span>Personal data such as emails is never shown in observability views.</span></footer>
+      <footer className="footer"><span>DocuFlow · API and worker containers observed through Splunk</span><span>Uploaded files are deleted once processed; only results are kept.</span></footer>
     </div>
   );
 }

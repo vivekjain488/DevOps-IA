@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create or update the EventPulse dashboard using Splunk's REST API."""
+"""Create or update the DocuFlow dashboard using Splunk's REST API, then check every panel search runs."""
 import base64
 import json
 import ssl
@@ -21,9 +21,9 @@ def request(path, data=None):
     with urllib.request.urlopen(req, context=context, timeout=60) as response:
         return response.read()
 
-name = 'eventpulse_observability'
+name = 'docuflow_observability'
 endpoint = '/servicesNS/admin/search/data/ui/views'
-xml = (root / 'splunk/eventpulse_dashboard.xml').read_text()
+xml = (root / 'splunk/docuflow_dashboard.xml').read_text()
 try:
     request(endpoint + '/' + name + '?output_mode=json')
     request(endpoint + '/' + name, {'eai:data': xml})

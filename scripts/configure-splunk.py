@@ -41,16 +41,24 @@ for index in ('container_logs', 'container_metrics'):
 
 prefix = '/servicesNS/admin/splunk_httpinput/data/inputs/http'
 request(prefix + '/http', {'disabled': '0', 'enableSSL': '1', 'port': '8088'})
-for name, key, index in (
-    ('eventpulse-logs', 'SPLUNK_HEC_TOKEN', 'container_logs'),
-    ('eventpulse-metrics', 'SPLUNK_METRICS_HEC_TOKEN', 'container_metrics'),
-):
-    values = {'token': env[key], 'index': index, 'indexes': index, 'disabled': '0'}
+def exists(name):
     try:
         request(prefix + '/' + name + '?output_mode=json')
-        request(prefix + '/' + name, values)
+        return True
     except urllib.error.HTTPError as error:
         if error.code != 404:
             raise
+        return False
+
+# Inputs created for this project under its earlier EventPulse name keep working; Splunk rejects a second input with the same token.
+for name, legacy, key, index in (
+    ('docuflow-logs', 'eventpulse-logs', 'SPLUNK_HEC_TOKEN', 'container_logs'),
+    ('docuflow-metrics', 'eventpulse-metrics', 'SPLUNK_METRICS_HEC_TOKEN', 'container_metrics'),
+):
+    values = {'token': env[key], 'index': index, 'indexes': index, 'disabled': '0'}
+    current = name if exists(name) else legacy if exists(legacy) else None
+    if current:
+        request(prefix + '/' + current, values)
+    else:
         request(prefix, {'name': name, **values})
-print('Configured container_logs, container_metrics, and both HEC tokens.')
+print('Configured container_logs, container_metrics, and both DocuFlow HEC tokens.')

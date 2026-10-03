@@ -45,22 +45,35 @@ const resolveRange = range => RANGES[range] ? range : '24h';
 // HEC JSON can surface fields twice (indexed + spath), so collapse each to a single value.
 const normalise = fields => `spath | foreach ${fields} [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ]`;
 const REQUEST_FIELDS = 'status duration_ms level msg method path request_id';
+const JOB_FIELDS = 'event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name';
 const requests = earliest => `search index=container_logs earliest=${earliest} | ${normalise(REQUEST_FIELDS)} | where isnotnull(status) AND isnotnull(duration_ms)`;
-const processStats = earliest => `search index=container_metrics earliest=${earliest} | ${normalise('metric_type cpu_percent memory_rss_mb heap_used_mb uptime_seconds')} | where metric_type="application_process_stats"`;
-const containerStats = earliest => `search index=container_metrics earliest=${earliest} | ${normalise('metric_type container_name container_status restart_count cpu_percent memory_percent memory_usage_mb network_rx_rate_bytes_per_second network_tx_rate_bytes_per_second')} | where metric_type="container_stats"`;
+const jobEvents = earliest => `search index=container_logs earliest=${earliest} | ${normalise(JOB_FIELDS)} | where isnotnull(event)`;
+const METRIC_FIELDS = 'metric_type service container_name container_status restart_count cpu_percent memory_percent memory_usage_mb memory_rss_mb network_rx_rate_bytes_per_second network_tx_rate_bytes_per_second uptime_seconds';
+const metrics = (earliest, type) => `search index=container_metrics earliest=${earliest} | ${normalise(METRIC_FIELDS)} | where metric_type="${type}"`;
+// Processing time is measured on completed jobs; queue time once per job, when the worker starts it.
+const JOB_STATS = 'count(eval(event="upload_received")) AS uploads count(eval(event="job_queued")) AS queued count(eval(event="job_completed")) AS completed count(eval(event="job_failed")) AS failed '
+  + 'avg(eval(if(event="job_completed",processing_duration_ms,null()))) AS avgProcessingMs perc95(eval(if(event="job_completed",processing_duration_ms,null()))) AS p95ProcessingMs '
+  + 'avg(eval(if(event="job_started",queue_time_ms,null()))) AS avgQueueMs perc95(eval(if(event="job_started",queue_time_ms,null()))) AS p95QueueMs';
+const roundMs = '| foreach *Ms [ eval <<FIELD>>=round(<<FIELD>>,2) ]';
+// Container names include "worker" for the worker; everything else monitored is the API.
+const roleTimeline = (nameField, cpu, memory, span) => `eval role=if(like(${nameField},"%worker%"),"worker","api") | timechart span=${span} `
+  + `avg(eval(if(role="api",${cpu},null()))) AS apiCpu avg(eval(if(role="worker",${cpu},null()))) AS workerCpu avg(eval(if(role="api",${memory},null()))) AS apiMemoryMb avg(eval(if(role="worker",${memory},null()))) AS workerMemoryMb`;
 
 function dashboardSearches(range) {
   const { earliest, previous, span } = RANGES[resolveRange(range)];
   return {
-    summary: `${requests(earliest)} | stats count AS requests count(eval(status>=400 AND status<500)) AS clientErrors count(eval(status>=500)) AS serverErrors count(eval(duration_ms>1000)) AS slowRequests avg(duration_ms) AS averageDurationMs perc50(duration_ms) AS p50DurationMs perc95(duration_ms) AS p95DurationMs perc99(duration_ms) AS p99DurationMs max(duration_ms) AS maxDurationMs dc(path) AS uniqueRoutes | foreach *DurationMs [ eval <<FIELD>>=round(<<FIELD>>,2) ]`,
-    previous: `${requests(`${previous} latest=${earliest}`)} | stats count AS requests count(eval(status>=400)) AS errors perc95(duration_ms) AS p95DurationMs | eval p95DurationMs=round(p95DurationMs,2)`,
-    timeline: `${requests(earliest)} | timechart span=${span} count AS requests count(eval(status>=400 AND status<500)) AS clientErrors count(eval(status>=500)) AS serverErrors avg(duration_ms) AS averageDurationMs perc95(duration_ms) AS p95DurationMs | foreach *DurationMs [ eval <<FIELD>>=round(<<FIELD>>,2) ]`,
-    statuses: `${requests(earliest)} | stats count BY status | sort status`,
-    routes: `${requests(earliest)} | stats count AS requests count(eval(status>=400)) AS errors avg(duration_ms) AS averageDurationMs perc95(duration_ms) AS p95DurationMs BY method path | foreach *DurationMs [ eval <<FIELD>>=round(<<FIELD>>,2) ] | sort - requests | head 10`,
-    slowest: `${requests(earliest)} | sort - duration_ms | head 6 | eval timestamp=strftime(_time,"%Y-%m-%dT%H:%M:%S.%3QZ") | table timestamp method path status duration_ms request_id`,
-    metrics: `${processStats(earliest)} | stats latest(cpu_percent) AS cpuPercent latest(memory_rss_mb) AS memoryRssMb latest(heap_used_mb) AS heapUsedMb latest(uptime_seconds) AS uptimeSeconds max(cpu_percent) AS peakCpuPercent max(memory_rss_mb) AS peakMemoryRssMb`,
-    metricsTimeline: `${processStats(earliest)} | timechart span=${span} avg(cpu_percent) AS cpuPercent avg(memory_rss_mb) AS memoryRssMb avg(heap_used_mb) AS heapUsedMb | eval cpuPercent=round(cpuPercent,2), memoryRssMb=round(memoryRssMb,2), heapUsedMb=round(heapUsedMb,2)`,
-    containers: `${containerStats(earliest)} | stats latest(container_status) AS status latest(restart_count) AS restarts latest(cpu_percent) AS cpuPercent latest(memory_percent) AS memoryPercent latest(memory_usage_mb) AS memoryUsageMb latest(network_rx_rate_bytes_per_second) AS rxBytesPerSecond latest(network_tx_rate_bytes_per_second) AS txBytesPerSecond latest(_time) AS lastSeen BY container_name | eval lastSeen=strftime(lastSeen,"%Y-%m-%dT%H:%M:%SZ")`
+    summary: `${jobEvents(earliest)} | stats ${JOB_STATS} ${roundMs}`,
+    previous: `${jobEvents(`${previous} latest=${earliest}`)} | stats ${JOB_STATS} ${roundMs}`,
+    timeline: `${jobEvents(earliest)} | timechart span=${span} ${JOB_STATS} ${roundMs}`,
+    // A job only moves forward, so its furthest state is its current one, even when events share a timestamp.
+    statuses: `${jobEvents(earliest)} | where isnotnull(job_id) AND isnotnull(job_status) | eval rank=case(job_status="QUEUED",1,job_status="PROCESSING",2,job_status="COMPLETED",3,job_status="FAILED",4) | stats max(rank) AS rank BY job_id | eval job_status=case(rank=1,"QUEUED",rank=2,"PROCESSING",rank=3,"COMPLETED",rank=4,"FAILED") | stats count BY job_status`,
+    failures: `${jobEvents(earliest)} | where event="job_failed" | stats count latest(failure_stage) AS stage BY failure_reason | sort - count | head 8`,
+    fileTypes: `${jobEvents(earliest)} | where event="upload_received" OR (event="job_queued" AND isnotnull(demo)) | stats count BY file_type | sort - count`,
+    slowest: `${jobEvents(earliest)} | where event="job_completed" | sort - processing_duration_ms | head 6 | eval timestamp=strftime(_time,"%Y-%m-%dT%H:%M:%S.%3QZ") | table timestamp job_id file_name file_type processing_duration_ms queue_time_ms`,
+    api: `${requests(earliest)} | stats count AS requests count(eval(status>=400 AND status<500)) AS clientErrors count(eval(status>=500)) AS serverErrors avg(duration_ms) AS averageDurationMs perc95(duration_ms) AS p95DurationMs ${roundMs}`,
+    containers: `${metrics(earliest, 'container_stats')} | stats latest(container_status) AS status latest(restart_count) AS restarts latest(cpu_percent) AS cpuPercent latest(memory_percent) AS memoryPercent latest(memory_usage_mb) AS memoryUsageMb latest(network_rx_rate_bytes_per_second) AS rxBytesPerSecond latest(network_tx_rate_bytes_per_second) AS txBytesPerSecond latest(_time) AS lastSeen BY container_name | eval lastSeen=strftime(lastSeen,"%Y-%m-%dT%H:%M:%SZ")`,
+    containerTimeline: `${metrics(earliest, 'container_stats')} | ${roleTimeline('container_name', 'cpu_percent', 'memory_usage_mb', span)}`,
+    processTimeline: `${metrics(earliest, 'application_process_stats')} | ${roleTimeline('service', 'cpu_percent', 'memory_rss_mb', span)}`
   };
 }
 
@@ -75,25 +88,29 @@ async function getDashboardData(range = '24h') {
     if (outcome.status === 'fulfilled') results[key] = outcome.value;
     else { if (CORE.includes(key)) throw outcome.reason; results[key] = []; unavailable.push(key); }
   });
-  return { range: selected, summary: results.summary[0] || {}, previous: results.previous[0] || {}, timeline: results.timeline, statuses: results.statuses, routes: results.routes,
-    slowest: results.slowest, metrics: results.metrics[0] || {}, metricsTimeline: results.metricsTimeline, containers: results.containers, unavailable, generatedAt: new Date().toISOString() };
+  // Docker stats are preferred; process stats cover a local run without containers.
+  const resources = results.containerTimeline.length ? { source: 'containers', timeline: results.containerTimeline } : { source: 'processes', timeline: results.processTimeline };
+  return { range: selected, summary: results.summary[0] || {}, previous: results.previous[0] || {}, timeline: results.timeline, statuses: results.statuses, failures: results.failures,
+    fileTypes: results.fileTypes, slowest: results.slowest, api: results.api[0] || {}, containers: results.containers, resources, unavailable, generatedAt: new Date().toISOString() };
 }
 
 const LEVELS = ['debug', 'info', 'warn', 'error', 'fatal'];
 const STATUS_CLASSES = { '2xx': [200, 300], '3xx': [300, 400], '4xx': [400, 500], '5xx': [500, 600] };
 const SAFE_TEXT = /^[\w\s\-./:@]{1,80}$/;
-const LOG_FIELDS = 'level msg method path status duration_ms request_id error_code errorType errorMessage';
+const LOG_FIELDS = 'level msg service event job_id job_status failure_reason method path status duration_ms request_id error_code errorType errorMessage';
+const SERVICES = ['docuflow-api', 'docuflow-worker'];
 const EMAIL = /[^\s@"]+@[^\s@"]+\.[^\s@"]+/g;
 const mask = value => typeof value === 'string' ? value.replace(EMAIL, '[redacted-email]') : value;
 
 // Every filter is validated against an allow-list or a strict pattern before it is placed in SPL.
-function buildLogQuery({ range, level, status, q, path, limit } = {}) {
+function buildLogQuery({ range, level, status, q, path, service, limit } = {}) {
   const { earliest, span } = RANGES[resolveRange(range)];
   const errors = [];
   if (level && !LEVELS.includes(level)) errors.push('level');
   if (status && !STATUS_CLASSES[status]) errors.push('status');
   if (q && !SAFE_TEXT.test(q)) errors.push('q');
   if (path && !SAFE_TEXT.test(path)) errors.push('path');
+  if (service && !SERVICES.includes(service)) errors.push('service');
   const size = limit === undefined ? 200 : Number(limit);
   if (!Number.isInteger(size) || size < 1 || size > 500) errors.push('limit');
   if (errors.length) return { errors };
@@ -102,10 +119,11 @@ function buildLogQuery({ range, level, status, q, path, limit } = {}) {
   if (level) filters.push(`level="${level}"`);
   if (status) filters.push(`status>=${STATUS_CLASSES[status][0]} AND status<${STATUS_CLASSES[status][1]}`);
   if (path) filters.push(`like(path,"${path.trim()}%")`);
+  if (service) filters.push(`service="${service}"`);
   const base = `search index=container_logs earliest=${earliest}${terms ? ` ${terms}` : ''} | spath | rename err.type AS errorType err.message AS errorMessage | ${normalise(LOG_FIELDS)}${filters.length ? ` | where ${filters.join(' AND ')}` : ''}`;
   return {
     errors,
-    events: `${base} | sort - _time | head ${size} | eval timestamp=strftime(_time,"%Y-%m-%dT%H:%M:%S.%3QZ") | table timestamp level msg method path status duration_ms request_id error_code errorType errorMessage`,
+    events: `${base} | sort - _time | head ${size} | eval timestamp=strftime(_time,"%Y-%m-%dT%H:%M:%S.%3QZ") | table timestamp level msg service event job_id job_status failure_reason method path status duration_ms request_id error_code errorType errorMessage`,
     levels: `${base} | eval level=coalesce(level,"unknown") | stats count BY level`,
     histogram: `${base} | eval level=coalesce(level,"unknown") | timechart span=${span} count BY level`,
     total: `${base} | stats count AS total`

@@ -10,10 +10,11 @@ function startProcessMetrics(intervalMs = 10000) {
     lastUsage = nowUsage; lastTime = nowTime;
     const memory = process.memoryUsage();
     void postToHec({
-      event: { timestamp: new Date().toISOString(), metric_type: 'application_process_stats', service: 'eventpulse', process_id: process.pid,
+      time: Date.now() / 1000,
+      event: { timestamp: new Date().toISOString(), metric_type: 'application_process_stats', service: process.env.SERVICE_NAME || 'docuflow-api', process_id: process.pid,
         process_status: 'running', uptime_seconds: Number(process.uptime().toFixed(2)), cpu_percent: Number(Math.max(0, (cpuMs / elapsedMs) * 100).toFixed(2)),
         memory_rss_bytes: memory.rss, memory_rss_mb: Number((memory.rss / 1048576).toFixed(2)), heap_used_bytes: memory.heapUsed, heap_used_mb: Number((memory.heapUsed / 1048576).toFixed(2)) },
-      token: process.env.SPLUNK_METRICS_HEC_TOKEN, index: 'container_metrics', sourcetype: 'eventpulse:application_metrics', source: 'eventpulse-local'
+      token: process.env.SPLUNK_METRICS_HEC_TOKEN, index: 'container_metrics', sourcetype: 'docuflow:application_metrics', source: process.env.SERVICE_NAME || 'docuflow-api'
     });
   };
   send(); const timer = setInterval(send, intervalMs); timer.unref(); return () => clearInterval(timer);
