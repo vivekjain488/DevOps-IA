@@ -216,8 +216,9 @@ code.path { font-family: var(--mono); font-size: 13px; color: var(--ink); overfl
 /* Let clicks fall through the copy to the ripple grid, while keeping controls interactive. */
 .hero > :not(.hero-bg) { pointer-events: none; position: relative; }
 .hero a, .hero button, .hero input, .hero label { pointer-events: auto; }
-.hero .flip { padding: 0; }
-.hero .flip span { background: var(--text-grad); -webkit-background-clip: text; background-clip: text; color: transparent; padding-bottom: 0.08em; }
+/* Phrases stack in one grid cell so the outgoing and incoming words cross-fade in place. */
+.flip-words { display: inline-grid; vertical-align: bottom; }
+.flip-word { grid-area: 1 / 1; white-space: nowrap; background: var(--text-grad); -webkit-background-clip: text; background-clip: text; color: transparent; padding-bottom: 0.1em; will-change: transform, opacity, filter; }
 .hero .subtitle { margin-top: 18px; }
 .hero h1 { font-size: clamp(32px, 5.4vw, 54px); letter-spacing: -0.035em; max-width: 16ch; line-height: 1.04; }
 .hbg { flex: none; cursor: pointer; border-color: var(--border-strong); text-decoration: none; }

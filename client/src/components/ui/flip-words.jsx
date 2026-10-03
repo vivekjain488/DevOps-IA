@@ -1,57 +1,33 @@
-// Aceternity UI — Flip Words (https://ui.aceternity.com/components/flip-words)
-import React, { useCallback, useEffect, useState } from 'react';
+// Adapted from Aceternity UI — Flip Words (https://ui.aceternity.com/components/flip-words)
+import React, { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { cn } from '../../lib/utils';
 
+/**
+ * Cycles through words. Each phrase animates as one element, so gradient text (background-clip: text)
+ * stays clipped to the glyphs; per-letter transforms and filters break that clip and paint a blurred box.
+ * Outgoing and incoming phrases share one grid cell, so they cross-fade without shifting the layout.
+ */
 export const FlipWords = ({ words, duration = 3000, className }) => {
-  const [currentWord, setCurrentWord] = useState(words[0]);
-  const [isAnimating, setIsAnimating] = useState(false);
-
-  const startAnimation = useCallback(() => {
-    const word = words[words.indexOf(currentWord) + 1] || words[0];
-    setCurrentWord(word);
-    setIsAnimating(true);
-  }, [currentWord, words]);
-
+  const [index, setIndex] = useState(0);
   useEffect(() => {
-    if (isAnimating) return undefined;
-    const id = setTimeout(() => startAnimation(), duration);
-    return () => clearTimeout(id);
-  }, [isAnimating, duration, startAnimation]);
+    const id = setInterval(() => setIndex(current => (current + 1) % words.length), duration);
+    return () => clearInterval(id);
+  }, [words.length, duration]);
 
   return (
-    <AnimatePresence onExitComplete={() => setIsAnimating(false)}>
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ type: 'spring', stiffness: 100, damping: 10 }}
-        exit={{ opacity: 0, y: -40, x: 40, filter: 'blur(8px)', scale: 2, position: 'absolute' }}
-        className={cn('z-10 inline-block relative text-left text-neutral-900 dark:text-neutral-100 px-2', className)}
-        key={currentWord}
-      >
-        {currentWord.split(' ').map((word, wordIndex) => (
-          <motion.span
-            key={word + wordIndex}
-            initial={{ opacity: 0, y: 10, filter: 'blur(8px)' }}
-            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-            transition={{ delay: wordIndex * 0.3, duration: 0.3 }}
-            className="inline-block whitespace-nowrap"
-          >
-            {word.split('').map((letter, letterIndex) => (
-              <motion.span
-                key={word + letterIndex}
-                initial={{ opacity: 0, y: 10, filter: 'blur(8px)' }}
-                animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                transition={{ delay: wordIndex * 0.3 + letterIndex * 0.05, duration: 0.2 }}
-                className="inline-block"
-              >
-                {letter}
-              </motion.span>
-            ))}
-            <span className="inline-block">&nbsp;</span>
-          </motion.span>
-        ))}
-      </motion.div>
-    </AnimatePresence>
+    <span className={cn('flip-words', className)}>
+      <AnimatePresence initial={false}>
+        <motion.span
+          key={words[index]}
+          className="flip-word"
+          initial={{ opacity: 0, y: '0.35em', filter: 'blur(6px)' }}
+          animate={{ opacity: 1, y: 0, filter: 'blur(0px)', transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1], delay: 0.12 } }}
+          exit={{ opacity: 0, y: '-0.35em', filter: 'blur(6px)', transition: { duration: 0.3, ease: 'easeIn' } }}
+        >
+          {words[index]}
+        </motion.span>
+      </AnimatePresence>
+    </span>
   );
 };
