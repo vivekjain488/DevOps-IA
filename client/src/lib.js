@@ -69,6 +69,11 @@ export function fmtRelative(value) {
   if (diff < 45) return 'just now'; if (diff < 3600) return `${Math.round(diff / 60)} min ago`; if (diff < 86400) return `${Math.round(diff / 3600)} h ago`;
   return fmtDate(value);
 }
+// Splunk timechart rows carry _time like "2026-10-03 13:43:00.000 GMT"; normalise to epoch ms so every browser parses it.
+export function splunkTime(value) {
+  const match = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}(?:\.\d+)?) (GMT|UTC)$/.exec(String(value || ''));
+  return match ? Date.parse(`${match[1]}T${match[2]}Z`) : Date.parse(value);
+}
 // Pick a tick/tooltip label that suits the window being shown.
 export const timeLabel = range => value => (range === '7d' ? `${fmtDay(value)} ${fmtTime(value)}` : fmtTime(value));
 

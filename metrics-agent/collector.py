@@ -25,16 +25,21 @@ def sample(target):
         c.reload(); base={'timestamp':datetime.now(timezone.utc).isoformat(),'metric_type':'container_stats','container_name':c.name,'container_id':c.short_id,'container_status':c.status,'restart_count':c.attrs['RestartCount']}
         if c.status!='running':
             previous.pop(target,None); send(base); return
-        stats=c.stats(stream=False); cpu=stats.get('cpu_stats',{}); precpu=stats.get('precpu_stats',{})
-        usage=cpu.get('cpu_usage',{}).get('total_usage',0)-precpu.get('cpu_usage',{}).get('total_usage',0); sys=cpu.get('system_cpu_usage',0)-precpu.get('system_cpu_usage',0)
-        cpus=cpu.get('online_cpus') or len(cpu.get('cpu_usage',{}).get('percpu_usage',[])) or 1; cpu_pct=number((usage/sys)*cpus*100) if usage>0 and sys>0 else 0
+        stats=c.stats(stream=False); cpu=stats.get('cpu_stats',{})
+        total=cpu.get('cpu_usage',{}).get('total_usage',0); system=cpu.get('system_cpu_usage',0)
+        cpus=cpu.get('online_cpus') or len(cpu.get('cpu_usage',{}).get('percpu_usage',[])) or 1
         mem=stats.get('memory_stats',{}); memuse=mem.get('usage',0); limit=mem.get('limit',0); networks=stats.get('networks',{})
         rx=sum(x.get('rx_bytes',0) for x in networks.values()); tx=sum(x.get('tx_bytes',0) for x in networks.values()); now=time.time()
-        rxrate=txrate=0; last=previous.get(target)
-        if last:
-            elapsed=now-last['time']; rxrate=number(max(0,rx-last['rx'])/elapsed); txrate=number(max(0,tx-last['tx'])/elapsed)
-        previous[target]={'time':now,'rx':rx,'tx':tx}
-        send({**base,'cpu_percent':cpu_pct,'memory_usage_bytes':memuse,'memory_usage_mb':number(memuse/(1024*1024)),'memory_limit_bytes':limit,'memory_percent':number(memuse/limit*100) if limit else 0,'network_rx_bytes':rx,'network_tx_bytes':tx,'network_rx_rate_bytes_per_second':rxrate,'network_tx_rate_bytes_per_second':txrate})
+        # Rates come from this agent's own consecutive samples. Docker's precpu_stats is empty or stale right after a
+        # (re)start, which turned lifetime CPU totals into impossible spikes. Counters that went backwards mean the
+        # container restarted, so that interval is skipped rather than reported.
+        last=previous.get(target); rates={}
+        if last and last['id']==c.id and total>=last['total'] and system>last['system'] and rx>=last['rx'] and tx>=last['tx']:
+            elapsed=now-last['time']
+            rates={'cpu_percent':number(min(cpus*100,(total-last['total'])/(system-last['system'])*cpus*100)),
+                   'network_rx_rate_bytes_per_second':number((rx-last['rx'])/elapsed),'network_tx_rate_bytes_per_second':number((tx-last['tx'])/elapsed)}
+        previous[target]={'id':c.id,'time':now,'total':total,'system':system,'rx':rx,'tx':tx}
+        send({**base,**rates,'online_cpus':cpus,'memory_usage_bytes':memuse,'memory_usage_mb':number(memuse/(1024*1024)),'memory_limit_bytes':limit,'memory_percent':number(memuse/limit*100) if limit else 0,'network_rx_bytes':rx,'network_tx_bytes':tx})
     except Exception as exc: logging.error('Docker statistics error for %s: %s',target,exc)
 logging.info('Watching containers: %s',', '.join(TARGETS))
 while True:

@@ -1,16 +1,16 @@
 const { EventEmitter } = require('events');
 jest.mock('https', () => ({ request: jest.fn() }));
-const https = require('https'); const { executeSearch, getDashboardData, getLogs, buildLogQuery, dashboardSearches } = require('../splunk');
+const https = require('https'); const { executeSearch, getDashboardData, getLogs, buildLogQuery, dashboardSearches, clearDashboardCache } = require('../splunk');
 beforeEach(() => { process.env.SPLUNK_REST_URL = 'https://127.0.0.1:8089'; process.env.SPLUNK_REST_TOKEN = 'masked'; https.request.mockImplementation((options, callback) => { const request = new EventEmitter(); request.write = jest.fn(); request.end = jest.fn(() => { const response = new EventEmitter(); response.statusCode = 200; response.setEncoding = jest.fn(); callback(response); response.emit('data', '{"preview":true,"result":{"requests":"0"}}\n{"preview":false,"result":{"requests":"4"}}\n'); response.emit('end'); }); return request; }); });
-afterEach(() => { delete process.env.SPLUNK_REST_URL; delete process.env.SPLUNK_REST_TOKEN; jest.clearAllMocks(); });
+afterEach(() => { clearDashboardCache(); delete process.env.SPLUNK_REST_URL; delete process.env.SPLUNK_REST_TOKEN; jest.clearAllMocks(); });
 test('exports JSON search results using a bearer token', async () => { await expect(executeSearch('search index=container_logs')).resolves.toEqual([{ requests: '4' }]); expect(https.request.mock.calls[0][0].headers.Authorization).toBe('Bearer masked'); });
-test('creates the dashboard data from approved aggregate searches', async () => { const result = await getDashboardData(); expect(result.summary).toEqual({ requests: '4' }); expect(result.failures).toEqual([{ requests: '4' }]); expect(result.resources.source).toBe('containers'); expect(https.request).toHaveBeenCalledTimes(Object.keys(dashboardSearches()).length); expect(result.range).toBe('24h'); expect(result.unavailable).toEqual([]); });
+test('creates the dashboard data from approved aggregate searches', async () => { const result = await getDashboardData(); expect(result.summary).toEqual({ requests: '4' }); expect(result.failures).toEqual([{ requests: '4' }]); expect(result.resources.source).toBe('containers'); expect(result.recentFailures).toEqual([{ requests: '4' }]); expect(result.apiTimeline).toHaveLength(1); expect(https.request).toHaveBeenCalledTimes(Object.keys(dashboardSearches()).length); expect(result.range).toBe('24h'); expect(result.unavailable).toEqual([]); });
 
 const respondWith = body => https.request.mockImplementation((options, callback) => { const request = new EventEmitter(); request.write = jest.fn(); request.end = jest.fn(() => { const response = new EventEmitter(); response.statusCode = 200; response.setEncoding = jest.fn(); callback(response); response.emit('data', body(options)); response.emit('end'); }); return request; });
 test('unknown dashboard ranges fall back to 24 hours', async () => { const result = await getDashboardData('1y; | delete'); expect(result.range).toBe('24h'); expect(https.request.mock.calls.length).toBeGreaterThan(0); });
 test('supporting panels degrade instead of failing the dashboard', async () => {
   let call = 0; https.request.mockImplementation((options, callback) => { const index = call++; const request = new EventEmitter(); request.write = jest.fn(); request.end = jest.fn(() => { const response = new EventEmitter(); response.statusCode = index === 2 ? 200 : index > 2 ? 500 : 200; response.setEncoding = jest.fn(); callback(response); response.emit('data', '{"preview":false,"result":{"requests":"4"}}\n'); response.emit('end'); }); return request; });
-  const result = await getDashboardData('1h'); expect(result.summary).toEqual({ requests: '4' }); expect(result.unavailable.length).toBeGreaterThan(0); expect(result.failures).toEqual([]); expect(result.resources).toEqual({ source: 'processes', timeline: [] });
+  const result = await getDashboardData('1h'); expect(result.summary).toEqual({ requests: '4' }); expect(result.unavailable.length).toBeGreaterThan(0); expect(result.failures).toEqual([]); expect(result.resources).toEqual({ source: 'processes', timeline: [] }); expect(result.recentFailures).toEqual([]);
 });
 test('log filters reject anything outside the allow-list', () => {
   expect(buildLogQuery({ level: 'nope' }).errors).toEqual(['level']);
@@ -28,3 +28,15 @@ test('log search masks email addresses and returns facets', async () => {
   const result = await getLogs({ range: '24h' }); expect(result.total).toBe(2); expect(result.events[0].msg).toBe('failed for [redacted-email]'); expect(result.levels).toHaveLength(1);
 });
 test('invalid log filters return errors without searching', async () => { await expect(getLogs({ level: 'bad' })).resolves.toEqual({ errors: ['level'] }); expect(https.request).not.toHaveBeenCalled(); });
+
+test('concurrent and repeated dashboard requests share one set of searches', async () => {
+  const [first, second] = await Promise.all([getDashboardData('6h'), getDashboardData('6h')]);
+  expect(first).toBe(second); await getDashboardData('6h');
+  expect(https.request).toHaveBeenCalledTimes(Object.keys(dashboardSearches()).length);
+});
+test('searches filter by sourcetype, keep observability calls out of API latency and distrust old CPU samples', () => {
+  const searches = dashboardSearches('1h');
+  expect(searches.summary).toContain('sourcetype="docuflow:application"');
+  expect(searches.api).toContain('NOT like(path,"/api/observability%")');
+  expect(searches.containers).toContain('cpu_percent=if(isnull(online_cpus),null(),cpu_percent)');
+});

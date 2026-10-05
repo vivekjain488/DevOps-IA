@@ -1,6 +1,9 @@
 const https = require('https');
 const http = require('http');
 
+// Posts still in flight, so a process can deliver its last events (e.g. job_started before a crash) before exiting.
+const pending = new Set();
+
 function postToHec({ event, token, index, sourcetype, source, time }) {
   const endpoint = process.env.SPLUNK_HEC_URL;
   if (!endpoint || !token) return Promise.resolve(false);
@@ -13,9 +16,17 @@ function postToHec({ event, token, index, sourcetype, source, time }) {
     method: 'POST', headers: { Authorization: `Splunk ${token}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) }, timeout: 5000
   };
   if (url.protocol === 'https:' && process.env.SPLUNK_HEC_INSECURE_TLS === 'true') options.rejectUnauthorized = false;
-  return new Promise(resolve => {
+  const sent = new Promise(resolve => {
     const request = transport.request(options, response => { response.resume(); resolve(response.statusCode >= 200 && response.statusCode < 300); });
     request.on('error', () => resolve(false)); request.on('timeout', () => request.destroy()); request.write(payload); request.end();
   });
+  pending.add(sent); sent.finally(() => pending.delete(sent));
+  return sent;
 }
-module.exports = { postToHec };
+// Resolves once every in-flight post has settled, or after timeoutMs so an unreachable Splunk cannot block an exit.
+function flushHec(timeoutMs = 3000) {
+  let timer;
+  const timeout = new Promise(resolve => { timer = setTimeout(resolve, timeoutMs); timer.unref(); });
+  return Promise.race([Promise.allSettled([...pending]), timeout]).finally(() => clearTimeout(timer));
+}
+module.exports = { postToHec, flushHec };

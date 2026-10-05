@@ -137,7 +137,7 @@ function QueueStats() {
       <div><span>Failed</span><b className={s.FAILED ? 'text-critical' : ''}>{fmtInt(s.FAILED)}</b></div>
       <div><span>In queue</span><b>{fmtInt(s.QUEUED + s.PROCESSING)}</b></div>
       <div><span>Avg processing</span><b>{stats.avgProcessingMs !== null ? fmtMs(stats.avgProcessingMs) : '—'}</b></div>
-      <div><span>Worker</span><b className={`cap ${stats.worker.status === 'online' ? 'text-good' : 'text-critical'}`}>{stats.worker.status}</b></div>
+      <div><span>Worker</span><b className={`cap ${stats.worker.status === 'online' ? 'text-good' : 'text-critical'}`} title={stats.worker.status === 'unknown' ? 'Start the worker: npm run worker, or docker compose up -d' : undefined}>{stats.worker.status === 'unknown' ? 'Not running' : stats.worker.status}</b></div>
     </div>
   );
 }

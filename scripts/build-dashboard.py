@@ -9,9 +9,10 @@ root = Path(__file__).resolve().parents[1]
 def norm(fields):
     return 'spath | foreach ' + fields + ' [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ]'
 
-JOBS = 'index=container_logs sourcetype="docuflow:application" | ' + norm('event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service') + ' | where isnotnull(event)'
-REQUESTS = 'index=container_logs sourcetype="docuflow:application" | ' + norm('status duration_ms method path service') + ' | where isnotnull(status) AND isnotnull(duration_ms)'
-CONTAINERS = 'index=container_metrics sourcetype="docuflow:container_metrics" | ' + norm('container_name container_status restart_count cpu_percent memory_usage_mb memory_percent network_rx_rate_bytes_per_second network_tx_rate_bytes_per_second')
+JOBS = 'index=container_logs sourcetype="docuflow:application" (upload_received OR upload_rejected OR job_queued OR job_started OR job_completed OR job_failed) | ' + norm('event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service') + ' | where isnotnull(event)'
+REQUESTS = 'index=container_logs sourcetype="docuflow:application" duration_ms NOT observability | ' + norm('status duration_ms method path service') + ' | where isnotnull(status) AND isnotnull(duration_ms) AND NOT like(path,"/api/observability%")'
+# CPU only from samples with online_cpus: older agent builds produced impossible values after container restarts.
+CONTAINERS = 'index=container_metrics sourcetype="docuflow:container_metrics" | ' + norm('container_name container_status restart_count online_cpus cpu_percent memory_usage_mb memory_percent network_rx_rate_bytes_per_second network_tx_rate_bytes_per_second') + ' | eval cpu_percent=if(isnull(online_cpus),null(),cpu_percent)'
 COMPLETED_MS = 'if(event="job_completed",processing_duration_ms,null())'
 STARTED_QUEUE = 'if(event="job_started",queue_time_ms,null())'
 
@@ -26,7 +27,7 @@ ROWS = [
     ],
     [
         ('Jobs created, completed and failed over time', 'chart', JOBS + ' | timechart span=1m count(eval(event="job_queued")) AS Created count(eval(event="job_completed")) AS Completed count(eval(event="job_failed")) AS Failed', {'charting.chart': 'column'}),
-        ('Job status distribution', 'chart', JOBS + ' | where isnotnull(job_id) AND isnotnull(job_status) | eval rank=case(job_status="QUEUED",1,job_status="PROCESSING",2,job_status="COMPLETED",3,job_status="FAILED",4) | stats max(rank) AS rank BY job_id | eval Status=case(rank=1,"QUEUED",rank=2,"PROCESSING",rank=3,"COMPLETED",rank=4,"FAILED") | stats count BY Status', {'charting.chart': 'pie'}),
+        ('Job status distribution', 'chart', JOBS + ' | stats count(eval(event="job_queued")) AS queued count(eval(event="job_started")) AS started count(eval(event="job_completed")) AS COMPLETED count(eval(event="job_failed")) AS FAILED count(eval(event="job_failed" AND failure_stage="processing")) AS failedInWorker | eval QUEUED=max(0,queued-started), PROCESSING=max(0,started-COMPLETED-failedInWorker) | fields QUEUED PROCESSING COMPLETED FAILED | transpose column_name=Status | rename "row 1" AS count | where count>0', {'charting.chart': 'pie'}),
     ],
     [
         ('Average and P95 processing duration (ms)', 'chart', JOBS + ' | timechart span=1m avg(eval(' + COMPLETED_MS + ')) AS Average perc95(eval(' + COMPLETED_MS + ')) AS P95', {'charting.chart': 'line'}),
@@ -46,7 +47,7 @@ ROWS = [
     ],
     [
         ('Network throughput (bytes/s)', 'chart', CONTAINERS + ' | eval Throughput=network_rx_rate_bytes_per_second+network_tx_rate_bytes_per_second | timechart span=30s avg(Throughput) BY container_name', {'charting.chart': 'area'}),
-        ('API response time: average and P95 (ms)', 'chart', REQUESTS + ' | timechart span=1m avg(duration_ms) AS Average perc95(duration_ms) AS P95', {'charting.chart': 'line'}),
+        ('API response time excl. Splunk proxy: average and P95 (ms)', 'chart', REQUESTS + ' | timechart span=1m avg(duration_ms) AS Average perc95(duration_ms) AS P95', {'charting.chart': 'line'}),
     ],
     [
         ('Recent job failures', 'table', JOBS + ' | where event="job_failed" | sort - _time | head 20 | eval Time=strftime(_time,"%H:%M:%S") | table Time job_id file_name failure_stage failure_reason', {}),

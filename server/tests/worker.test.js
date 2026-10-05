@@ -1,11 +1,11 @@
 const fs = require('fs'); const os = require('os'); const path = require('path');
 const Database = require('better-sqlite3'); const { initialise } = require('../db'); const jobs = require('../jobs'); const { createWorker } = require('../workerLoop');
 const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn(), fatal: jest.fn() };
-let db, uploadDir, worker, exit, sleep;
+let db, uploadDir, worker, exit, sleep, flushLogs;
 beforeEach(() => {
   db = initialise(new Database(':memory:')); uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'docuflow-worker-'));
-  exit = jest.fn(); sleep = jest.fn(() => Promise.resolve());
-  worker = createWorker({ db, uploadDir, logger, workerId: 'worker-a', exit, sleep, slowJobMs: 8000, pollMs: 5 });
+  exit = jest.fn(); sleep = jest.fn(() => Promise.resolve()); flushLogs = jest.fn(() => Promise.resolve());
+  worker = createWorker({ db, uploadDir, logger, workerId: 'worker-a', exit, sleep, slowJobMs: 8000, pollMs: 5, flushLogs });
 });
 afterEach(() => { db.close(); fs.rmSync(uploadDir, { recursive: true, force: true }); jest.clearAllMocks(); });
 function queue(name, content, demo = null) {
@@ -55,6 +55,7 @@ test('the slow demo waits before processing', async () => {
 test('the crash demo exits the process and the restarted worker fails the interrupted job', async () => {
   const row = queue('crash.csv', 'a\n1', 'crash');
   expect((await worker.runOnce()).status).toBe('PROCESSING'); expect(exit).toHaveBeenCalledWith(1);
+  expect(flushLogs.mock.invocationCallOrder[0]).toBeLessThan(exit.mock.invocationCallOrder[0]);
   expect(logged('worker_crash_simulated')).toHaveLength(1);
   const restarted = createWorker({ db, uploadDir, logger, workerId: 'worker-a', exit, sleep: realSleep, pollMs: 5 });
   const running = restarted.start(); await new Promise(resolve => setTimeout(resolve, 20)); await restarted.stop(); await running;

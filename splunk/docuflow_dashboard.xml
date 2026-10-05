@@ -15,7 +15,7 @@
       <title>Jobs created</title>
       <single>
         <search>
-          <query>index=container_logs sourcetype="docuflow:application" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | where event="job_queued" | stats count AS Jobs</query>
+          <query>index=container_logs sourcetype="docuflow:application" (upload_received OR upload_rejected OR job_queued OR job_started OR job_completed OR job_failed) | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | where event="job_queued" | stats count AS Jobs</query>
           <earliest>$window.earliest$</earliest>
           <latest>$window.latest$</latest>
           <refresh>30s</refresh>
@@ -28,7 +28,7 @@
       <title>Jobs completed</title>
       <single>
         <search>
-          <query>index=container_logs sourcetype="docuflow:application" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | where event="job_completed" | stats count AS Completed</query>
+          <query>index=container_logs sourcetype="docuflow:application" (upload_received OR upload_rejected OR job_queued OR job_started OR job_completed OR job_failed) | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | where event="job_completed" | stats count AS Completed</query>
           <earliest>$window.earliest$</earliest>
           <latest>$window.latest$</latest>
           <refresh>30s</refresh>
@@ -41,7 +41,7 @@
       <title>Jobs failed</title>
       <single>
         <search>
-          <query>index=container_logs sourcetype="docuflow:application" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | where event="job_failed" | stats count AS Failed</query>
+          <query>index=container_logs sourcetype="docuflow:application" (upload_received OR upload_rejected OR job_queued OR job_started OR job_completed OR job_failed) | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | where event="job_failed" | stats count AS Failed</query>
           <earliest>$window.earliest$</earliest>
           <latest>$window.latest$</latest>
           <refresh>30s</refresh>
@@ -54,7 +54,7 @@
       <title>Failure rate</title>
       <single>
         <search>
-          <query>index=container_logs sourcetype="docuflow:application" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | stats count(eval(event="job_completed")) AS ok count(eval(event="job_failed")) AS failed | eval Rate=if(ok+failed&gt;0,round(100*failed/(ok+failed),1),0) | fields Rate</query>
+          <query>index=container_logs sourcetype="docuflow:application" (upload_received OR upload_rejected OR job_queued OR job_started OR job_completed OR job_failed) | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | stats count(eval(event="job_completed")) AS ok count(eval(event="job_failed")) AS failed | eval Rate=if(ok+failed&gt;0,round(100*failed/(ok+failed),1),0) | fields Rate</query>
           <earliest>$window.earliest$</earliest>
           <latest>$window.latest$</latest>
           <refresh>30s</refresh>
@@ -68,7 +68,7 @@
       <title>Average processing time</title>
       <single>
         <search>
-          <query>index=container_logs sourcetype="docuflow:application" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | stats avg(eval(if(event="job_completed",processing_duration_ms,null()))) AS Average | eval Average=round(Average,1)</query>
+          <query>index=container_logs sourcetype="docuflow:application" (upload_received OR upload_rejected OR job_queued OR job_started OR job_completed OR job_failed) | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | stats avg(eval(if(event="job_completed",processing_duration_ms,null()))) AS Average | eval Average=round(Average,1)</query>
           <earliest>$window.earliest$</earliest>
           <latest>$window.latest$</latest>
           <refresh>30s</refresh>
@@ -82,7 +82,7 @@
       <title>P95 processing time</title>
       <single>
         <search>
-          <query>index=container_logs sourcetype="docuflow:application" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | stats perc95(eval(if(event="job_completed",processing_duration_ms,null()))) AS P95 | eval P95=round(P95,1)</query>
+          <query>index=container_logs sourcetype="docuflow:application" (upload_received OR upload_rejected OR job_queued OR job_started OR job_completed OR job_failed) | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | stats perc95(eval(if(event="job_completed",processing_duration_ms,null()))) AS P95 | eval P95=round(P95,1)</query>
           <earliest>$window.earliest$</earliest>
           <latest>$window.latest$</latest>
           <refresh>30s</refresh>
@@ -98,7 +98,7 @@
       <title>Jobs created, completed and failed over time</title>
       <chart>
         <search>
-          <query>index=container_logs sourcetype="docuflow:application" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | timechart span=1m count(eval(event="job_queued")) AS Created count(eval(event="job_completed")) AS Completed count(eval(event="job_failed")) AS Failed</query>
+          <query>index=container_logs sourcetype="docuflow:application" (upload_received OR upload_rejected OR job_queued OR job_started OR job_completed OR job_failed) | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | timechart span=1m count(eval(event="job_queued")) AS Created count(eval(event="job_completed")) AS Completed count(eval(event="job_failed")) AS Failed</query>
           <earliest>$window.earliest$</earliest>
           <latest>$window.latest$</latest>
           <refresh>30s</refresh>
@@ -112,7 +112,7 @@
       <title>Job status distribution</title>
       <chart>
         <search>
-          <query>index=container_logs sourcetype="docuflow:application" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | where isnotnull(job_id) AND isnotnull(job_status) | eval rank=case(job_status="QUEUED",1,job_status="PROCESSING",2,job_status="COMPLETED",3,job_status="FAILED",4) | stats max(rank) AS rank BY job_id | eval Status=case(rank=1,"QUEUED",rank=2,"PROCESSING",rank=3,"COMPLETED",rank=4,"FAILED") | stats count BY Status</query>
+          <query>index=container_logs sourcetype="docuflow:application" (upload_received OR upload_rejected OR job_queued OR job_started OR job_completed OR job_failed) | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | stats count(eval(event="job_queued")) AS queued count(eval(event="job_started")) AS started count(eval(event="job_completed")) AS COMPLETED count(eval(event="job_failed")) AS FAILED count(eval(event="job_failed" AND failure_stage="processing")) AS failedInWorker | eval QUEUED=max(0,queued-started), PROCESSING=max(0,started-COMPLETED-failedInWorker) | fields QUEUED PROCESSING COMPLETED FAILED | transpose column_name=Status | rename "row 1" AS count | where count&gt;0</query>
           <earliest>$window.earliest$</earliest>
           <latest>$window.latest$</latest>
           <refresh>30s</refresh>
@@ -128,7 +128,7 @@
       <title>Average and P95 processing duration (ms)</title>
       <chart>
         <search>
-          <query>index=container_logs sourcetype="docuflow:application" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | timechart span=1m avg(eval(if(event="job_completed",processing_duration_ms,null()))) AS Average perc95(eval(if(event="job_completed",processing_duration_ms,null()))) AS P95</query>
+          <query>index=container_logs sourcetype="docuflow:application" (upload_received OR upload_rejected OR job_queued OR job_started OR job_completed OR job_failed) | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | timechart span=1m avg(eval(if(event="job_completed",processing_duration_ms,null()))) AS Average perc95(eval(if(event="job_completed",processing_duration_ms,null()))) AS P95</query>
           <earliest>$window.earliest$</earliest>
           <latest>$window.latest$</latest>
           <refresh>30s</refresh>
@@ -142,7 +142,7 @@
       <title>Queue time: average and P95 (ms)</title>
       <chart>
         <search>
-          <query>index=container_logs sourcetype="docuflow:application" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | timechart span=1m avg(eval(if(event="job_started",queue_time_ms,null()))) AS Average perc95(eval(if(event="job_started",queue_time_ms,null()))) AS P95</query>
+          <query>index=container_logs sourcetype="docuflow:application" (upload_received OR upload_rejected OR job_queued OR job_started OR job_completed OR job_failed) | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | timechart span=1m avg(eval(if(event="job_started",queue_time_ms,null()))) AS Average perc95(eval(if(event="job_started",queue_time_ms,null()))) AS P95</query>
           <earliest>$window.earliest$</earliest>
           <latest>$window.latest$</latest>
           <refresh>30s</refresh>
@@ -158,7 +158,7 @@
       <title>Most common failure reasons</title>
       <chart>
         <search>
-          <query>index=container_logs sourcetype="docuflow:application" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | where event="job_failed" | stats count AS Failures BY failure_reason | sort - Failures</query>
+          <query>index=container_logs sourcetype="docuflow:application" (upload_received OR upload_rejected OR job_queued OR job_started OR job_completed OR job_failed) | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | where event="job_failed" | stats count AS Failures BY failure_reason | sort - Failures</query>
           <earliest>$window.earliest$</earliest>
           <latest>$window.latest$</latest>
           <refresh>30s</refresh>
@@ -172,7 +172,7 @@
       <title>File type distribution</title>
       <chart>
         <search>
-          <query>index=container_logs sourcetype="docuflow:application" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | where event="upload_received" OR (event="job_queued" AND isnotnull(demo)) | stats count BY file_type</query>
+          <query>index=container_logs sourcetype="docuflow:application" (upload_received OR upload_rejected OR job_queued OR job_started OR job_completed OR job_failed) | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | where event="upload_received" OR (event="job_queued" AND isnotnull(demo)) | stats count BY file_type</query>
           <earliest>$window.earliest$</earliest>
           <latest>$window.latest$</latest>
           <refresh>30s</refresh>
@@ -188,7 +188,7 @@
       <title>API and worker CPU (%)</title>
       <chart>
         <search>
-          <query>index=container_metrics sourcetype="docuflow:container_metrics" | spath | foreach container_name container_status restart_count cpu_percent memory_usage_mb memory_percent network_rx_rate_bytes_per_second network_tx_rate_bytes_per_second [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | timechart span=30s avg(cpu_percent) BY container_name</query>
+          <query>index=container_metrics sourcetype="docuflow:container_metrics" | spath | foreach container_name container_status restart_count online_cpus cpu_percent memory_usage_mb memory_percent network_rx_rate_bytes_per_second network_tx_rate_bytes_per_second [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | eval cpu_percent=if(isnull(online_cpus),null(),cpu_percent) | timechart span=30s avg(cpu_percent) BY container_name</query>
           <earliest>$window.earliest$</earliest>
           <latest>$window.latest$</latest>
           <refresh>30s</refresh>
@@ -202,7 +202,7 @@
       <title>API and worker memory (MB)</title>
       <chart>
         <search>
-          <query>index=container_metrics sourcetype="docuflow:container_metrics" | spath | foreach container_name container_status restart_count cpu_percent memory_usage_mb memory_percent network_rx_rate_bytes_per_second network_tx_rate_bytes_per_second [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | timechart span=30s avg(memory_usage_mb) BY container_name</query>
+          <query>index=container_metrics sourcetype="docuflow:container_metrics" | spath | foreach container_name container_status restart_count online_cpus cpu_percent memory_usage_mb memory_percent network_rx_rate_bytes_per_second network_tx_rate_bytes_per_second [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | eval cpu_percent=if(isnull(online_cpus),null(),cpu_percent) | timechart span=30s avg(memory_usage_mb) BY container_name</query>
           <earliest>$window.earliest$</earliest>
           <latest>$window.latest$</latest>
           <refresh>30s</refresh>
@@ -218,7 +218,7 @@
       <title>Container status and restart count</title>
       <table>
         <search>
-          <query>index=container_metrics sourcetype="docuflow:container_metrics" | spath | foreach container_name container_status restart_count cpu_percent memory_usage_mb memory_percent network_rx_rate_bytes_per_second network_tx_rate_bytes_per_second [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | stats latest(container_status) AS Status latest(restart_count) AS Restarts latest(_time) AS LastSeen BY container_name | eval LastSeen=strftime(LastSeen,"%Y-%m-%d %H:%M:%S") | rename container_name AS Container</query>
+          <query>index=container_metrics sourcetype="docuflow:container_metrics" | spath | foreach container_name container_status restart_count online_cpus cpu_percent memory_usage_mb memory_percent network_rx_rate_bytes_per_second network_tx_rate_bytes_per_second [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | eval cpu_percent=if(isnull(online_cpus),null(),cpu_percent) | stats latest(container_status) AS Status latest(restart_count) AS Restarts latest(_time) AS LastSeen BY container_name | eval LastSeen=strftime(LastSeen,"%Y-%m-%d %H:%M:%S") | rename container_name AS Container</query>
           <earliest>$window.earliest$</earliest>
           <latest>$window.latest$</latest>
           <refresh>30s</refresh>
@@ -231,7 +231,7 @@
       <title>Restart count over time</title>
       <chart>
         <search>
-          <query>index=container_metrics sourcetype="docuflow:container_metrics" | spath | foreach container_name container_status restart_count cpu_percent memory_usage_mb memory_percent network_rx_rate_bytes_per_second network_tx_rate_bytes_per_second [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | timechart span=30s max(restart_count) BY container_name</query>
+          <query>index=container_metrics sourcetype="docuflow:container_metrics" | spath | foreach container_name container_status restart_count online_cpus cpu_percent memory_usage_mb memory_percent network_rx_rate_bytes_per_second network_tx_rate_bytes_per_second [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | eval cpu_percent=if(isnull(online_cpus),null(),cpu_percent) | timechart span=30s max(restart_count) BY container_name</query>
           <earliest>$window.earliest$</earliest>
           <latest>$window.latest$</latest>
           <refresh>30s</refresh>
@@ -247,7 +247,7 @@
       <title>Network throughput (bytes/s)</title>
       <chart>
         <search>
-          <query>index=container_metrics sourcetype="docuflow:container_metrics" | spath | foreach container_name container_status restart_count cpu_percent memory_usage_mb memory_percent network_rx_rate_bytes_per_second network_tx_rate_bytes_per_second [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | eval Throughput=network_rx_rate_bytes_per_second+network_tx_rate_bytes_per_second | timechart span=30s avg(Throughput) BY container_name</query>
+          <query>index=container_metrics sourcetype="docuflow:container_metrics" | spath | foreach container_name container_status restart_count online_cpus cpu_percent memory_usage_mb memory_percent network_rx_rate_bytes_per_second network_tx_rate_bytes_per_second [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | eval cpu_percent=if(isnull(online_cpus),null(),cpu_percent) | eval Throughput=network_rx_rate_bytes_per_second+network_tx_rate_bytes_per_second | timechart span=30s avg(Throughput) BY container_name</query>
           <earliest>$window.earliest$</earliest>
           <latest>$window.latest$</latest>
           <refresh>30s</refresh>
@@ -258,10 +258,10 @@
       </chart>
     </panel>
     <panel>
-      <title>API response time: average and P95 (ms)</title>
+      <title>API response time excl. Splunk proxy: average and P95 (ms)</title>
       <chart>
         <search>
-          <query>index=container_logs sourcetype="docuflow:application" | spath | foreach status duration_ms method path service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(status) AND isnotnull(duration_ms) | timechart span=1m avg(duration_ms) AS Average perc95(duration_ms) AS P95</query>
+          <query>index=container_logs sourcetype="docuflow:application" duration_ms NOT observability | spath | foreach status duration_ms method path service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(status) AND isnotnull(duration_ms) AND NOT like(path,"/api/observability%") | timechart span=1m avg(duration_ms) AS Average perc95(duration_ms) AS P95</query>
           <earliest>$window.earliest$</earliest>
           <latest>$window.latest$</latest>
           <refresh>30s</refresh>
@@ -277,7 +277,7 @@
       <title>Recent job failures</title>
       <table>
         <search>
-          <query>index=container_logs sourcetype="docuflow:application" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | where event="job_failed" | sort - _time | head 20 | eval Time=strftime(_time,"%H:%M:%S") | table Time job_id file_name failure_stage failure_reason</query>
+          <query>index=container_logs sourcetype="docuflow:application" (upload_received OR upload_rejected OR job_queued OR job_started OR job_completed OR job_failed) | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | where event="job_failed" | sort - _time | head 20 | eval Time=strftime(_time,"%H:%M:%S") | table Time job_id file_name failure_stage failure_reason</query>
           <earliest>$window.earliest$</earliest>
           <latest>$window.latest$</latest>
           <refresh>30s</refresh>
@@ -290,7 +290,7 @@
       <title>Slowest jobs</title>
       <table>
         <search>
-          <query>index=container_logs sourcetype="docuflow:application" | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | where event="job_completed" | sort - processing_duration_ms | head 10 | table job_id file_name file_type queue_time_ms processing_duration_ms</query>
+          <query>index=container_logs sourcetype="docuflow:application" (upload_received OR upload_rejected OR job_queued OR job_started OR job_completed OR job_failed) | spath | foreach event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name service [ eval &lt;&lt;FIELD&gt;&gt;=mvindex(&lt;&lt;FIELD&gt;&gt;,0) ] | where isnotnull(event) | where event="job_completed" | sort - processing_duration_ms | head 10 | table job_id file_name file_type queue_time_ms processing_duration_ms</query>
           <earliest>$window.earliest$</earliest>
           <latest>$window.latest$</latest>
           <refresh>30s</refresh>

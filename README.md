@@ -99,6 +99,13 @@ npm run worker         # in a second terminal
 
 Locally the database and uploads live in `server/data/`, and the dashboard's CPU/memory panels use process metrics instead of container stats.
 
+### Troubleshooting: "No worker running" or "Worker offline"
+
+- **Local `npm start` and Docker both claim port 3000.** Whichever starts first owns the port, and the other is silently unreachable. A local API only sees a worker if you also run `npm run worker`, so use one setup at a time. To go back to Docker, stop the local server and run `docker compose up -d --force-recreate api`.
+- **Local runs share whatever `DATABASE_PATH` is set in `.env`.** The API and worker must use the same file. Remove an old `DATABASE_PATH` line to use the default `server/data/docuflow.db`.
+- **Run `docker compose` from the project root.** Compose reads `.env` from the directory you run it in. Run it inside `server/` and it picks up `server/.env`, whose tokens may be stale. Symptoms: the dashboard shows `SPLUNK_AUTH_FAILED` (HTTP 401), or `docker logs docuflow-metrics-agent` shows `HEC returned status 403`. The setup scripts renew only the root `.env`.
+- **In Docker**, run `docker compose ps`. The worker should be `healthy`, and `docker logs docuflow-worker` shows its `worker_started` event.
+
 ## Demo script for Splunk evidence
 
 1. Upload a valid CSV and a TXT file. Then upload a `.pdf`, an empty `.txt`, and a CSV with a short row (`a,b` then `1`).

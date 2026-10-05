@@ -9,3 +9,4 @@ dist
 server/data/
 server/server/
 smoke.csv
+__pycache__/

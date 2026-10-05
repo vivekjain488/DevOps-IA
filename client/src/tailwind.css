@@ -13,6 +13,13 @@
 }
 
 @theme inline {
+  /* shadcn chart tokens, mapped onto the app's own light/dark palette. */
+  --color-background: var(--surface);
+  --color-foreground: var(--ink);
+  --color-muted: var(--surface-2);
+  --color-muted-foreground: var(--muted);
+  --color-border: var(--border-strong);
+  --font-mono: var(--mono);
   --animate-cell-ripple: cell-ripple var(--duration, 200ms) ease-out none 1 var(--delay, 0ms);
   @keyframes cell-ripple {
     0% { opacity: 0.4; }

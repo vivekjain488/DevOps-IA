@@ -2,6 +2,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const jobs = require('./jobs');
 const { processFile, ProcessingError } = require('./processor');
+const { flushHec } = require('./hec');
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const elapsedMs = started => Number(process.hrtime.bigint() - started) / 1e6;
@@ -13,7 +14,7 @@ const RESULT_FIELDS = { rowCount: 'row_count', columnCount: 'column_count', miss
  * Polls the shared database for QUEUED jobs and processes them one at a time.
  * sleep and exit are injectable so tests can run the slow and crash demos instantly.
  */
-function createWorker({ db, uploadDir, logger, workerId, pollMs = 1000, heartbeatMs = 5000, slowJobMs = 8000, sleep = delay, exit = code => process.exit(code) }) {
+function createWorker({ db, uploadDir, logger, workerId, pollMs = 1000, heartbeatMs = 5000, slowJobMs = 8000, sleep = delay, exit = code => process.exit(code), flushLogs = flushHec }) {
   let running = false, current = Promise.resolve(), heartbeatTimer = null;
   const jobFields = row => ({ job_id: jobs.publicId(row.id), job_status: row.status, file_name: row.file_name, file_type: row.file_type, file_size_bytes: row.file_size_bytes, worker: workerId, ...(row.demo ? { demo: row.demo } : {}) });
   const removeUpload = row => (row.stored_path ? fs.rm(path.join(uploadDir, row.stored_path), { force: true }).catch(() => {}) : Promise.resolve());
@@ -25,6 +26,8 @@ function createWorker({ db, uploadDir, logger, workerId, pollMs = 1000, heartbea
     try {
       if (row.demo === 'crash') {
         logger.fatal({ event: 'worker_crash_simulated', ...jobFields(row) }, 'Simulated worker crash requested by a demo job');
+        // Deliver job_started and the crash event to Splunk first; process.exit would drop posts still in flight.
+        await flushLogs();
         exit(1);
         return jobs.getJob(db, row.id);
       }

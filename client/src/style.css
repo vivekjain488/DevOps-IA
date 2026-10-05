@@ -122,8 +122,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .icon-btn { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--ink-2); cursor: pointer; }
 .icon-btn:hover { color: var(--ink); border-color: var(--border-strong); }
 .page { width: 100%; max-width: 1160px; margin: 0 auto; padding: 32px var(--gutter) 56px; flex: 1; }
-.page.wide { max-width: 1400px; }
-.footer { border-top: 1px solid var(--border); max-width: 1400px; width: 100%; margin: 0 auto; padding: 20px var(--gutter); display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+.page.wide, .footer.wide { max-width: 1400px; }
+.footer { border-top: 1px solid var(--border); max-width: 1160px; width: 100%; margin: 0 auto; padding: 20px var(--gutter); display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
 
 /* ---------- Buttons & controls ---------- */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 38px; padding: 0 15px; border-radius: var(--radius-sm); border: 1px solid transparent; font-weight: 500; font-size: 14px; cursor: pointer; white-space: nowrap; transition: background 0.15s, border-color 0.15s, transform 0.08s; }
@@ -256,6 +256,8 @@ code.path { font-family: var(--mono); font-size: 13px; color: var(--ink); overfl
 .text-good { color: var(--good-ink); }
 .text-warning { color: var(--warning-ink); }
 .job-list { list-style: none; margin: 0 -20px -20px; padding: 0; }
+/* A list that opens the card sits flush with its top edge instead of under the card padding. */
+.card > .job-list:first-child { margin-top: -20px; }
 .job-row { display: grid; grid-template-columns: 112px minmax(0, 1fr) 48px 64px 150px 76px 16px; align-items: center; gap: 14px; padding: 12px 20px; border-top: 1px solid var(--border); color: var(--ink); font-size: 14px; }
 .job-row:hover { background: var(--surface-2); }
 .job-list li:first-child .job-row { border-top: 0; }
@@ -313,9 +315,27 @@ code.path { font-family: var(--mono); font-size: 13px; color: var(--ink); overfl
 .json { margin: 0 0 14px; padding: 14px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); font-family: var(--mono); font-size: 12px; line-height: 1.6; overflow: auto; max-height: 360px; }
 .reason { display: inline-flex; gap: 8px; align-items: baseline; font-size: 13px; }
 .reason em { font-style: normal; font-family: var(--mono); font-size: 11px; color: var(--muted); }
-.chip-row + .card { margin-top: 0; }
+.chip-row + .card { margin-top: 14px; }
 
 /* ---------- Dashboard ---------- */
+/* shadcn chart sizing: the container defaults to aspect-video, these panels use fixed heights instead. */
+.chart-box { aspect-ratio: auto; width: 100%; }
+/* A card whose chart should use the full height of its grid row rather than leave a gap below. */
+.card.fill { display: flex; flex-direction: column; }
+.card.fill > .chart-box { flex: 1; }
+.chart-box .recharts-cartesian-axis-tick text { font-family: var(--mono); font-size: 11px; }
+.chart-box .recharts-legend-wrapper { font-size: 12px; }
+.chart-bar-value { fill: var(--ink); font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.chart-center-value { fill: var(--ink); font-size: 26px; font-weight: 600; letter-spacing: -0.02em; }
+.chart-center-label { fill: var(--muted); font-size: 12px; }
+
+.table-wrap.scroll { max-height: 340px; overflow-y: auto; }
+.table-wrap.scroll thead th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
+.cell-truncate { display: inline-block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+.path-link code { font-family: var(--mono); font-size: 13px; color: var(--ink); }
+.path-link:hover code { text-decoration: underline; }
+.cell-sub.cell-truncate { display: block; font-size: 12px; color: var(--muted); max-width: 170px; margin-top: 2px; }
+.chart-box .chart-rank-tick { fill: var(--ink-2); }
 .banner { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); margin-bottom: 16px; box-shadow: var(--shadow); }
 .banner > div { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; flex: 1; min-width: 0; }
 .banner b { font-weight: 600; }
@@ -344,6 +364,8 @@ code.path { font-family: var(--mono); font-size: 13px; color: var(--ink); overfl
 .dash-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .span-2 { grid-column: span 2; }
 .span-3 { grid-column: 1 / -1; }
+/* Table cards size to their rows instead of stretching to a taller neighbour, which left blank space under the table. */
+.dash-grid > .hug { align-self: start; }
 .footnote { margin-top: 20px; font-size: 13px; color: var(--muted); }
 .bar-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
 .bar-list-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
@@ -358,6 +380,7 @@ code.path { font-family: var(--mono); font-size: 13px; color: var(--ink); overfl
 .slow-list a > div:first-child { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .slow-meta { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); flex: none; }
 .slow-meta > span { display: none; }
+.slow-queue { font-style: normal; white-space: nowrap; }
 .slow-meta b { margin-left: auto; font-family: var(--mono); font-size: 13px; font-weight: 500; color: var(--ink); }
 .facts-list { margin: 0; display: grid; }
 .facts-list > div { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
@@ -509,6 +532,7 @@ th.num { font-family: var(--font); font-size: 12px; }
   .queue-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .job-list { margin: 0 -16px -16px; }
+  .card > .job-list:first-child { margin-top: -16px; }
   .job-row { padding: 12px 16px; }
   .job-head { flex-direction: column; align-items: flex-start; }
   .lifecycle em { font-size: 11px; }

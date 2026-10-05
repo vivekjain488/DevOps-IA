@@ -22,7 +22,7 @@ function performSearch(search) {
   const base = new URL(baseUrl);
   const payload = new URLSearchParams({ search, output_mode: 'json', preview: 'false' }).toString();
   const transport = base.protocol === 'https:' ? https : http;
-  const options = { hostname: base.hostname, port: base.port || (base.protocol === 'https:' ? 443 : 80), path: '/services/search/v2/jobs/export', method: 'POST', timeout: 10000,
+  const options = { hostname: base.hostname, port: base.port || (base.protocol === 'https:' ? 443 : 80), path: '/services/search/v2/jobs/export', method: 'POST', timeout: 30000,
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(payload) } };
   if (base.protocol === 'https:' && process.env.SPLUNK_REST_INSECURE_TLS === 'true') options.rejectUnauthorized = false;
   return new Promise((resolve, reject) => {
@@ -46,10 +46,17 @@ const resolveRange = range => RANGES[range] ? range : '24h';
 const normalise = fields => `spath | foreach ${fields} [ eval <<FIELD>>=mvindex(<<FIELD>>,0) ]`;
 const REQUEST_FIELDS = 'status duration_ms level msg method path request_id';
 const JOB_FIELDS = 'event job_id job_status file_type demo failure_reason failure_stage processing_duration_ms queue_time_ms file_name';
-const requests = earliest => `search index=container_logs earliest=${earliest} | ${normalise(REQUEST_FIELDS)} | where isnotnull(status) AND isnotnull(duration_ms)`;
-const jobEvents = earliest => `search index=container_logs earliest=${earliest} | ${normalise(JOB_FIELDS)} | where isnotnull(event)`;
-const METRIC_FIELDS = 'metric_type service container_name container_status restart_count cpu_percent memory_percent memory_usage_mb memory_rss_mb network_rx_rate_bytes_per_second network_tx_rate_bytes_per_second uptime_seconds';
-const metrics = (earliest, type) => `search index=container_metrics earliest=${earliest} | ${normalise(METRIC_FIELDS)} | where metric_type="${type}"`;
+// Sourcetype and raw-term filters let Splunk skip unrelated events before the costly spath step.
+const LOGS = 'index=container_logs sourcetype="docuflow:application"';
+// Request latency for the API itself; the observability endpoints only proxy Splunk searches, so their time is Splunk's.
+const requests = earliest => `search ${LOGS} earliest=${earliest} duration_ms NOT observability | ${normalise(REQUEST_FIELDS)} | where isnotnull(status) AND isnotnull(duration_ms) AND NOT like(path,"/api/observability%")`;
+const jobEvents = earliest => `search ${LOGS} earliest=${earliest} (upload_received OR upload_rejected OR job_queued OR job_started OR job_completed OR job_failed) | ${normalise(JOB_FIELDS)} | where isnotnull(event)`;
+const METRIC_FIELDS = 'metric_type service container_name container_status restart_count online_cpus cpu_percent memory_percent memory_usage_mb memory_rss_mb network_rx_rate_bytes_per_second network_tx_rate_bytes_per_second uptime_seconds';
+const SOURCETYPES = { container_stats: 'docuflow:container_metrics', application_process_stats: 'docuflow:application_metrics' };
+// Container CPU is trusted only from samples that carry online_cpus: earlier agent versions derived CPU from Docker's
+// precpu_stats, which is empty after a restart and produced impossible values (over 100% x cores).
+const metrics = (earliest, type) => `search index=container_metrics sourcetype="${SOURCETYPES[type]}" earliest=${earliest} | ${normalise(METRIC_FIELDS)} | where metric_type="${type}"`
+  + (type === 'container_stats' ? ' | eval cpu_percent=if(isnull(online_cpus),null(),cpu_percent)' : '');
 // Processing time is measured on completed jobs; queue time once per job, when the worker starts it.
 const JOB_STATS = 'count(eval(event="upload_received")) AS uploads count(eval(event="job_queued")) AS queued count(eval(event="job_completed")) AS completed count(eval(event="job_failed")) AS failed '
   + 'avg(eval(if(event="job_completed",processing_duration_ms,null()))) AS avgProcessingMs perc95(eval(if(event="job_completed",processing_duration_ms,null()))) AS p95ProcessingMs '
@@ -65,22 +72,40 @@ function dashboardSearches(range) {
     summary: `${jobEvents(earliest)} | stats ${JOB_STATS} ${roundMs}`,
     previous: `${jobEvents(`${previous} latest=${earliest}`)} | stats ${JOB_STATS} ${roundMs}`,
     timeline: `${jobEvents(earliest)} | timechart span=${span} ${JOB_STATS} ${roundMs}`,
-    // A job only moves forward, so its furthest state is its current one, even when events share a timestamp.
-    statuses: `${jobEvents(earliest)} | where isnotnull(job_id) AND isnotnull(job_status) | eval rank=case(job_status="QUEUED",1,job_status="PROCESSING",2,job_status="COMPLETED",3,job_status="FAILED",4) | stats max(rank) AS rank BY job_id | eval job_status=case(rank=1,"QUEUED",rank=2,"PROCESSING",rank=3,"COMPLETED",rank=4,"FAILED") | stats count BY job_status`,
+    // Counted from lifecycle events rather than per job_id, because job IDs restart at JOB-1001 when the data volume is reset.
+    // Queued = queued but not started; processing = started but not finished; failed includes uploads rejected by the API.
+    statuses: `${jobEvents(earliest)} | stats count(eval(event="job_queued")) AS queued count(eval(event="job_started")) AS started count(eval(event="job_completed")) AS COMPLETED count(eval(event="job_failed")) AS FAILED count(eval(event="job_failed" AND failure_stage="processing")) AS failedInWorker `
+      + '| eval QUEUED=max(0,queued-started), PROCESSING=max(0,started-COMPLETED-failedInWorker) | fields QUEUED PROCESSING COMPLETED FAILED | transpose column_name=job_status | rename "row 1" AS count | where count>0',
     failures: `${jobEvents(earliest)} | where event="job_failed" | stats count latest(failure_stage) AS stage BY failure_reason | sort - count | head 8`,
     fileTypes: `${jobEvents(earliest)} | where event="upload_received" OR (event="job_queued" AND isnotnull(demo)) | stats count BY file_type | sort - count`,
     slowest: `${jobEvents(earliest)} | where event="job_completed" | sort - processing_duration_ms | head 6 | eval timestamp=strftime(_time,"%Y-%m-%dT%H:%M:%S.%3QZ") | table timestamp job_id file_name file_type processing_duration_ms queue_time_ms`,
     api: `${requests(earliest)} | stats count AS requests count(eval(status>=400 AND status<500)) AS clientErrors count(eval(status>=500)) AS serverErrors avg(duration_ms) AS averageDurationMs perc95(duration_ms) AS p95DurationMs ${roundMs}`,
     containers: `${metrics(earliest, 'container_stats')} | stats latest(container_status) AS status latest(restart_count) AS restarts latest(cpu_percent) AS cpuPercent latest(memory_percent) AS memoryPercent latest(memory_usage_mb) AS memoryUsageMb latest(network_rx_rate_bytes_per_second) AS rxBytesPerSecond latest(network_tx_rate_bytes_per_second) AS txBytesPerSecond latest(_time) AS lastSeen BY container_name | eval lastSeen=strftime(lastSeen,"%Y-%m-%dT%H:%M:%SZ")`,
-    containerTimeline: `${metrics(earliest, 'container_stats')} | ${roleTimeline('container_name', 'cpu_percent', 'memory_usage_mb', span)}`,
+    // Same role split as CPU/memory, plus restart count (max, so a restart is never averaged away) and combined network throughput.
+    containerTimeline: `${metrics(earliest, 'container_stats')} | eval netBytes=network_rx_rate_bytes_per_second+network_tx_rate_bytes_per_second | ${roleTimeline('container_name', 'cpu_percent', 'memory_usage_mb', span)} `
+      + 'max(eval(if(role="api",restart_count,null()))) AS apiRestarts max(eval(if(role="worker",restart_count,null()))) AS workerRestarts '
+      + 'avg(eval(if(role="api",netBytes,null()))) AS apiNetBytes avg(eval(if(role="worker",netBytes,null()))) AS workerNetBytes',
+    apiTimeline: `${requests(earliest)} | timechart span=${span} count AS requests avg(duration_ms) AS averageDurationMs perc95(duration_ms) AS p95DurationMs ${roundMs}`,
+    recentFailures: `${jobEvents(earliest)} | where event="job_failed" | sort - _time | head 20 | eval timestamp=strftime(_time,"%Y-%m-%dT%H:%M:%S.%3QZ") | table timestamp job_id file_name failure_stage failure_reason`,
     processTimeline: `${metrics(earliest, 'application_process_stats')} | ${roleTimeline('service', 'cpu_percent', 'memory_rss_mb', span)}`
   };
 }
 
 // Core panels must succeed; supporting panels degrade to empty so one slow search never blanks the dashboard.
 const CORE = ['summary', 'timeline'];
-async function getDashboardData(range = '24h') {
-  const selected = resolveRange(range), searches = dashboardSearches(selected), keys = Object.keys(searches);
+// Several open dashboards or a quick auto-refresh share one in-flight result per range instead of queueing 13 more searches each.
+const CACHE_MS = 15000;
+const dashboardCache = new Map();
+function getDashboardData(range = '24h') {
+  const selected = resolveRange(range), cached = dashboardCache.get(selected);
+  if (cached && (cached.pending || Date.now() - cached.at < CACHE_MS)) return cached.promise;
+  const entry = { pending: true, at: 0 };
+  entry.promise = loadDashboardData(selected).then(data => { entry.pending = false; entry.at = Date.now(); return data; }, error => { dashboardCache.delete(selected); throw error; });
+  dashboardCache.set(selected, entry);
+  return entry.promise;
+}
+async function loadDashboardData(range) {
+  const selected = range, searches = dashboardSearches(selected), keys = Object.keys(searches);
   const settled = await Promise.allSettled(keys.map(key => executeSearch(searches[key])));
   const results = {}, unavailable = [];
   settled.forEach((outcome, index) => {
@@ -91,7 +116,7 @@ async function getDashboardData(range = '24h') {
   // Docker stats are preferred; process stats cover a local run without containers.
   const resources = results.containerTimeline.length ? { source: 'containers', timeline: results.containerTimeline } : { source: 'processes', timeline: results.processTimeline };
   return { range: selected, summary: results.summary[0] || {}, previous: results.previous[0] || {}, timeline: results.timeline, statuses: results.statuses, failures: results.failures,
-    fileTypes: results.fileTypes, slowest: results.slowest, api: results.api[0] || {}, containers: results.containers, resources, unavailable, generatedAt: new Date().toISOString() };
+    fileTypes: results.fileTypes, slowest: results.slowest, recentFailures: results.recentFailures, api: results.api[0] || {}, apiTimeline: results.apiTimeline, containers: results.containers, resources, unavailable, generatedAt: new Date().toISOString() };
 }
 
 const LEVELS = ['debug', 'info', 'warn', 'error', 'fatal'];
@@ -120,7 +145,7 @@ function buildLogQuery({ range, level, status, q, path, service, limit } = {}) {
   if (status) filters.push(`status>=${STATUS_CLASSES[status][0]} AND status<${STATUS_CLASSES[status][1]}`);
   if (path) filters.push(`like(path,"${path.trim()}%")`);
   if (service) filters.push(`service="${service}"`);
-  const base = `search index=container_logs earliest=${earliest}${terms ? ` ${terms}` : ''} | spath | rename err.type AS errorType err.message AS errorMessage | ${normalise(LOG_FIELDS)}${filters.length ? ` | where ${filters.join(' AND ')}` : ''}`;
+  const base = `search index=container_logs sourcetype="docuflow:application" earliest=${earliest}${terms ? ` ${terms}` : ''} | spath | rename err.type AS errorType err.message AS errorMessage | ${normalise(LOG_FIELDS)}${filters.length ? ` | where ${filters.join(' AND ')}` : ''}`;
   return {
     errors,
     events: `${base} | sort - _time | head ${size} | eval timestamp=strftime(_time,"%Y-%m-%dT%H:%M:%S.%3QZ") | table timestamp level msg service event job_id job_status failure_reason method path status duration_ms request_id error_code errorType errorMessage`,
@@ -139,4 +164,4 @@ async function getLogs(params) {
     levels, histogram, generatedAt: new Date().toISOString() };
 }
 
-module.exports = { executeSearch, getDashboardData, getLogs, buildLogQuery, dashboardSearches, RANGES };
+module.exports = { executeSearch, getDashboardData, clearDashboardCache: () => dashboardCache.clear(), getLogs, buildLogQuery, dashboardSearches, RANGES };

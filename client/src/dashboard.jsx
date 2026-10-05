@@ -1,44 +1,26 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { api, num, fmtInt, fmtMs, fmtAxisMs, fmtPct, fmtBytes, fmtRelative, fmtDate, timeLabel, RANGE_OPTIONS, RANGE_NAMES, useInterval, linkProps } from './lib';
+import { api, num, fmtInt, fmtMs, fmtAxisMs, fmtPct, fmtBytes, fmtRelative, fmtDate, fmtTime, fmtDay, splunkTime, timeLabel, RANGE_OPTIONS, RANGE_NAMES, useInterval, linkProps } from './lib';
 import { Card, PageHeader, Segmented, Stat, Delta, Empty, Skeleton, Icon } from './ui';
-import { LineChart, ColumnChart, Sparkline, Legend, ShareBar } from './charts';
-import { StatusPill, reasonLabel } from './jobs';
+import { Sparkline } from './charts';
+import { TimeSeriesChart, StackedBarChart, RankingBarChart, DonutChart, LatencyVolumeChart } from './components/dashboard-charts';
+import { reasonLabel } from './jobs';
 
-const OUTCOMES = [
-  { key: 'completed', label: 'Completed', color: 'var(--series-1)' },
-  { key: 'failed', label: 'Failed', color: 'var(--status-critical)' }
-];
-const DURATION = [
-  { key: 'avgProcessingMs', label: 'Avg processing', color: 'var(--series-1)', shape: 'line' },
-  { key: 'p95ProcessingMs', label: 'P95 processing', color: 'var(--series-2)', shape: 'line' },
-  { key: 'avgQueueMs', label: 'Avg queue time', color: 'var(--series-3)', shape: 'line' }
-];
-const CPU = [
-  { key: 'apiCpu', label: 'API', color: 'var(--series-1)', shape: 'line' },
-  { key: 'workerCpu', label: 'Worker', color: 'var(--series-2)', shape: 'line' }
-];
-const MEMORY = [
-  { key: 'apiMemoryMb', label: 'API', color: 'var(--series-1)', shape: 'line' },
-  { key: 'workerMemoryMb', label: 'Worker', color: 'var(--series-2)', shape: 'line' }
-];
-const STATUS_COLOR = { COMPLETED: 'var(--series-1)', FAILED: 'var(--status-critical)', PROCESSING: 'var(--status-warning)', QUEUED: 'var(--muted)' };
+// shadcn chart configs: each key becomes --color-<key> inside its chart.
+const OUTCOMES = { completed: { label: 'Completed', color: 'var(--series-1)' }, failed: { label: 'Failed', color: 'var(--status-critical)' } };
+const PROCESSING = { avgProcessingMs: { label: 'Average', color: 'var(--series-1)' }, p95ProcessingMs: { label: 'P95', color: 'var(--series-2)' } };
+const QUEUE = { avgQueueMs: { label: 'Average', color: 'var(--series-3)' }, p95QueueMs: { label: 'P95', color: 'var(--series-2)' } };
+const byRole = suffix => ({ [`api${suffix}`]: { label: 'API', color: 'var(--series-1)' }, [`worker${suffix}`]: { label: 'Worker', color: 'var(--series-2)' } });
+const CPU = byRole('Cpu'), MEMORY = byRole('MemoryMb'), NETWORK = byRole('NetBytes'), RESTARTS = byRole('Restarts');
+const API_LATENCY = { requests: { label: 'Requests', color: 'var(--surface-3)' }, averageDurationMs: { label: 'Average', color: 'var(--series-1)' }, p95DurationMs: { label: 'P95', color: 'var(--series-2)' } };
+const STATUS_CONFIG = {
+  QUEUED: { label: 'Queued', color: 'var(--muted)' }, PROCESSING: { label: 'Processing', color: 'var(--status-warning)' },
+  COMPLETED: { label: 'Completed', color: 'var(--series-1)' }, FAILED: { label: 'Failed', color: 'var(--status-critical)' }
+};
+const FILE_COLORS = { csv: 'var(--series-1)', txt: 'var(--series-3)' };
 const STATUS_ORDER = ['QUEUED', 'PROCESSING', 'COMPLETED', 'FAILED'];
 const nullable = value => (value === '' || value === null || value === undefined ? null : Number(value));
 const rateTone = (rate, warn, crit) => (rate >= crit ? 'critical' : rate >= warn ? 'warning' : 'good');
 
-function BarList({ rows, total, label, color }) {
-  const max = Math.max(1, ...rows.map(row => row.count));
-  return (
-    <ul className="bar-list">
-      {rows.map(row => (
-        <li key={row.key}>
-          <div className="bar-list-head">{label(row)}<span className="bar-list-value">{fmtInt(row.count)} <em>{total ? fmtPct((row.count / total) * 100) : ''}</em></span></div>
-          <ShareBar value={row.count} max={max} color={color(row)} />
-        </li>
-      ))}
-    </ul>
-  );
-}
 
 function useDashboard(range) {
   const [data, setData] = useState(null), [error, setError] = useState(null), [loading, setLoading] = useState(true);
@@ -54,7 +36,7 @@ export function DashboardPage({ search }) {
   const { data, error, loading, load } = useDashboard(range);
   useInterval(load, auto ? 30000 : 0);
   const setRange = value => { setRangeState(value); window.history.replaceState({}, '', `/dashboard?range=${value}`); };
-  const fmtX = timeLabel(range);
+  const fmtX = timeLabel(range), fmtTip = t => `${fmtDay(t)}, ${fmtTime(t)}`;
 
   const view = useMemo(() => {
     if (!data) return null;
@@ -63,17 +45,21 @@ export function DashboardPage({ search }) {
     const prevFinished = num(p.completed) + num(p.failed);
     const timeline = data.timeline.map(row => {
       const done = num(row.completed) + num(row.failed);
-      return { time: row._time, queued: num(row.queued), completed: num(row.completed), failed: num(row.failed), failureRate: done ? (num(row.failed) / done) * 100 : null,
-        avgProcessingMs: nullable(row.avgProcessingMs), p95ProcessingMs: nullable(row.p95ProcessingMs), avgQueueMs: nullable(row.avgQueueMs) };
+      return { t: splunkTime(row._time), queued: num(row.queued), completed: num(row.completed), failed: num(row.failed), failureRate: done ? (num(row.failed) / done) * 100 : null,
+        avgProcessingMs: nullable(row.avgProcessingMs), p95ProcessingMs: nullable(row.p95ProcessingMs), avgQueueMs: nullable(row.avgQueueMs), p95QueueMs: nullable(row.p95QueueMs) };
     });
-    const resources = data.resources.timeline.map(row => ({ time: row._time, apiCpu: nullable(row.apiCpu), workerCpu: nullable(row.workerCpu), apiMemoryMb: nullable(row.apiMemoryMb), workerMemoryMb: nullable(row.workerMemoryMb) }));
-    const statuses = data.statuses.map(row => ({ key: row.job_status, count: num(row.count) })).sort((a, b) => STATUS_ORDER.indexOf(a.key) - STATUS_ORDER.indexOf(b.key));
-    const failures = data.failures.map(row => ({ key: row.failure_reason, stage: row.stage, count: num(row.count) }));
-    const fileTypes = data.fileTypes.map(row => ({ key: row.file_type, count: num(row.count) }));
+    const resources = data.resources.timeline.map(row => ({ t: splunkTime(row._time), apiCpu: nullable(row.apiCpu), workerCpu: nullable(row.workerCpu), apiMemoryMb: nullable(row.apiMemoryMb), workerMemoryMb: nullable(row.workerMemoryMb),
+      apiRestarts: nullable(row.apiRestarts), workerRestarts: nullable(row.workerRestarts), apiNetBytes: nullable(row.apiNetBytes), workerNetBytes: nullable(row.workerNetBytes) }));
+    const apiTimeline = data.apiTimeline.map(row => ({ t: splunkTime(row._time), requests: num(row.requests), averageDurationMs: num(row.requests) ? nullable(row.averageDurationMs) : null, p95DurationMs: num(row.requests) ? nullable(row.p95DurationMs) : null }));
+    const statuses = data.statuses.map(row => ({ key: row.job_status, count: num(row.count), fill: `var(--color-${row.job_status})` }))
+      .filter(row => STATUS_CONFIG[row.key] && row.count > 0).sort((a, b) => STATUS_ORDER.indexOf(a.key) - STATUS_ORDER.indexOf(b.key));
+    const failures = data.failures.map(row => ({ key: row.failure_reason, label: `${reasonLabel(row.failure_reason)} (${row.stage === 'validation' ? 'API' : 'worker'})`, count: num(row.count), fill: 'var(--color-failures)' }));
+    const fileTypes = data.fileTypes.map(row => ({ key: row.file_type, count: num(row.count), fill: `var(--color-${row.file_type})` }));
+    const fileConfig = Object.fromEntries(fileTypes.map(row => [row.key, { label: `.${row.key}`, color: FILE_COLORS[row.key] || 'var(--status-critical)' }]));
     const restarts = data.containers.reduce((sum, row) => sum + num(row.restarts), 0);
     const down = data.containers.filter(row => row.status !== 'running');
     return { completed, failed, finished, failureRate: finished ? (failed / finished) * 100 : 0, prevFailureRate: prevFinished ? (num(p.failed) / prevFinished) * 100 : null,
-      timeline, resources, statuses, failures, fileTypes, restarts, down, statusTotal: statuses.reduce((sum, row) => sum + row.count, 0) };
+      timeline, resources, apiTimeline, containerSource: data.resources.source === 'containers', statuses, failures, fileTypes, fileConfig, restarts, down, statusTotal: statuses.reduce((sum, row) => sum + row.count, 0) };
   }, [data]);
 
   const health = view && (() => {
@@ -140,35 +126,43 @@ export function DashboardPage({ search }) {
           <div className="dash-grid">
             <Card className="span-2" title="Jobs over time" subtitle="Finished jobs per interval by outcome">
               {!view.finished ? <Empty title="No finished jobs in this window">Upload a file or run a demo scenario.</Empty>
-                : <><Legend series={OUTCOMES} /><ColumnChart data={view.timeline} series={OUTCOMES} xFormat={fmtX} yFormat={fmtInt} label="Jobs completed and failed over time" /></>}
+                : <StackedBarChart data={view.timeline} config={OUTCOMES} xFormat={fmtX} timeFormat={fmtTip} valueFormat={value => `${fmtInt(value)} jobs`} />}
             </Card>
-            <Card title="Job status" subtitle="Latest status of each job">
-              {!view.statuses.length ? <Empty title="No jobs yet" /> : <BarList rows={view.statuses} total={view.statusTotal} label={row => <StatusPill status={row.key} />} color={row => STATUS_COLOR[row.key] || 'var(--muted)'} />}
+            <Card title="Job status" subtitle="Where every job in this window ended up">
+              {!view.statuses.length ? <Empty title="No jobs yet" /> : <DonutChart rows={view.statuses} config={STATUS_CONFIG} centerLabel="jobs" valueFormat={value => `${fmtInt(value)} jobs`} />}
             </Card>
 
-            <Card className="span-2" title="Processing and queue time" subtitle="Average and P95 processing duration, average wait in the queue">
-              {!view.timeline.some(row => row.avgProcessingMs !== null || row.avgQueueMs !== null) ? <Empty title="No timing data yet" />
-                : <><Legend series={DURATION} /><LineChart data={view.timeline} series={DURATION} xFormat={fmtX} yFormat={fmtAxisMs} valueFormat={fmtMs} label="Processing and queue time" area={false} thresholds={[{ value: 5000, label: 'Slow · 5 s' }]} /></>}
+            <Card className="span-2" title="Processing duration" subtitle="Average and P95 time the worker spent on completed jobs">
+              {!view.timeline.some(row => row.avgProcessingMs !== null) ? <Empty title="No completed jobs yet" />
+                : <TimeSeriesChart data={view.timeline} config={PROCESSING} xFormat={fmtX} timeFormat={fmtTip} yFormat={fmtAxisMs} valueFormat={fmtMs} />}
             </Card>
-            <Card title="Failure reasons" subtitle="Most common causes, API and worker">
+            <Card className="fill" title="Failure reasons" subtitle="Most common causes, API and worker">
               {!view.failures.length ? <Empty icon="check" title="No failures in this window" />
-                : <BarList rows={view.failures} total={view.failed} label={row => <span className="reason">{reasonLabel(row.key)}<em>{row.stage === 'validation' ? 'API' : 'worker'}</em></span>} color={() => 'var(--status-critical)'} />}
+                : <RankingBarChart rows={view.failures} config={{ failures: { label: 'Failures', color: 'var(--status-critical)' } }} valueFormat={value => fmtInt(value)} />}
             </Card>
 
-            <Card title="CPU usage" subtitle={view && data.resources.source === 'containers' ? 'Docker container CPU %' : 'Node.js process CPU %'}>
-              {!view.resources.length ? <Empty icon="server" title="No resource metrics">Start the metrics agent or set <code>SPLUNK_METRICS_HEC_TOKEN</code>.</Empty>
-                : <><Legend series={CPU} /><LineChart data={view.resources} series={CPU} height={180} area={false} xFormat={fmtX} yFormat={value => `${Number(value).toFixed(value < 10 ? 1 : 0)}%`} valueFormat={value => fmtPct(value, 2)} label="API and worker CPU" /></>}
-            </Card>
-            <Card title="Memory" subtitle={data.resources.source === 'containers' ? 'Container memory, MB' : 'Process resident memory, MB'}>
-              {!view.resources.length ? <Empty icon="server" title="No resource metrics" />
-                : <><Legend series={MEMORY} /><LineChart data={view.resources} series={MEMORY} height={180} area={false} xFormat={fmtX} yFormat={value => `${Math.round(value)}`} valueFormat={value => `${Number(value).toFixed(1)} MB`} label="API and worker memory" /></>}
+            <Card className="span-2" title="Queue time" subtitle="Average and P95 wait between upload and the worker starting the job">
+              {!view.timeline.some(row => row.avgQueueMs !== null) ? <Empty title="No queue data yet" />
+                : <TimeSeriesChart data={view.timeline} config={QUEUE} xFormat={fmtX} timeFormat={fmtTip} yFormat={fmtAxisMs} valueFormat={fmtMs} />}
             </Card>
             <Card title="File types" subtitle="Uploads by extension">
-              {!view.fileTypes.length ? <Empty icon="file" title="No uploads yet" />
-                : <BarList rows={view.fileTypes} total={view.fileTypes.reduce((sum, row) => sum + row.count, 0)} label={row => <code className={['csv', 'txt'].includes(row.key) ? '' : 'text-critical'}>.{row.key}</code>} color={row => (['csv', 'txt'].includes(row.key) ? 'var(--series-1)' : 'var(--status-critical)')} />}
+              {!view.fileTypes.length ? <Empty icon="file" title="No uploads yet" /> : <DonutChart rows={view.fileTypes} config={view.fileConfig} centerLabel="uploads" valueFormat={value => `${fmtInt(value)} uploads`} />}
             </Card>
 
-            <Card className="span-2" title="Containers" subtitle="Docker runtime state from the metrics agent">
+            <Card title="CPU usage" subtitle={view.containerSource ? 'Docker container CPU % (100% = one core)' : 'Node.js process CPU %'}>
+              {!view.resources.some(row => row.apiCpu !== null || row.workerCpu !== null) ? <Empty icon="server" title="No CPU samples yet">The metrics agent reports every 10 seconds.</Empty>
+                : <TimeSeriesChart kind="line" data={view.resources} config={CPU} height={220} connectNulls xFormat={fmtX} timeFormat={fmtTip} yFormat={value => `${Number(value).toFixed(value < 10 ? 1 : 0)}%`} valueFormat={value => fmtPct(value, 2)} />}
+            </Card>
+            <Card title="Memory" subtitle={view.containerSource ? 'Container memory, MB' : 'Process resident memory, MB'}>
+              {!view.resources.some(row => row.apiMemoryMb !== null || row.workerMemoryMb !== null) ? <Empty icon="server" title="No memory samples yet" />
+                : <TimeSeriesChart data={view.resources} config={MEMORY} height={220} connectNulls xFormat={fmtX} timeFormat={fmtTip} yFormat={value => `${Math.round(value)}`} valueFormat={value => `${Number(value).toFixed(1)} MB`} />}
+            </Card>
+            <Card title="Network throughput" subtitle="Received + sent per container">
+              {!view.containerSource ? <Empty icon="server" title="No container metrics">Network stats come from the Docker metrics agent.</Empty>
+                : <TimeSeriesChart data={view.resources} config={NETWORK} stacked height={220} connectNulls xFormat={fmtX} timeFormat={fmtTip} yFormat={value => fmtBytes(value).replace('/s', '')} valueFormat={fmtBytes} />}
+            </Card>
+
+            <Card className="span-2" title="Containers" subtitle="Latest Docker runtime state from the metrics agent">
               {!data.containers.length ? <Empty icon="server" title="No container metrics">Run the stack with Docker Compose so the metrics agent can report the API and worker containers.</Empty> : (
                 <div className="table-wrap">
                   <table>
@@ -178,10 +172,10 @@ export function DashboardPage({ search }) {
                         <tr key={row.container_name}>
                           <td><code className="path">{row.container_name}</code></td>
                           <td><span className={`pill ${row.status === 'running' ? 'good' : 'critical'}`}><i />{row.status || 'unknown'}</span></td>
-                          <td className="num">{fmtPct(row.cpuPercent)}</td>
+                          <td className="num">{row.cpuPercent !== undefined ? fmtPct(row.cpuPercent) : '—'}</td>
                           <td className="num">{num(row.memoryUsageMb).toFixed(0)} MB <em className="muted">· {fmtPct(row.memoryPercent)}</em></td>
-                          <td className="num">{fmtBytes(row.rxBytesPerSecond)}</td>
-                          <td className="num">{fmtBytes(row.txBytesPerSecond)}</td>
+                          <td className="num">{row.rxBytesPerSecond !== undefined ? fmtBytes(row.rxBytesPerSecond) : '—'}</td>
+                          <td className="num">{row.txBytesPerSecond !== undefined ? fmtBytes(row.txBytesPerSecond) : '—'}</td>
                           <td className={`num ${num(row.restarts) > 0 ? 'text-critical' : ''}`}>{fmtInt(row.restarts)}</td>
                           <td>{row.lastSeen ? fmtRelative(row.lastSeen) : '—'}</td>
                         </tr>
@@ -191,18 +185,52 @@ export function DashboardPage({ search }) {
                 </div>
               )}
             </Card>
-            <Card title="Slowest jobs" subtitle="Select one to open it">
+            <Card title="Restart count over time" subtitle="Docker RestartCount per container">
+              {!view.containerSource ? <Empty icon="server" title="No container metrics" />
+                : <TimeSeriesChart kind="step" data={view.resources} config={RESTARTS} height={220} connectNulls xFormat={fmtX} timeFormat={fmtTip} valueFormat={value => `${fmtInt(value)} restarts`} />}
+            </Card>
+
+            <Card className="span-3" title="API response time" subtitle="Requests per interval with average and P95 latency · excludes the Splunk-backed /api/observability calls">
+              {!view.apiTimeline.some(row => row.requests) ? <Empty title="No API requests in this window" />
+                : <LatencyVolumeChart data={view.apiTimeline} config={API_LATENCY} xFormat={fmtX} timeFormat={fmtTip} msFormat={fmtMs} axisMsFormat={fmtAxisMs} countFormat={value => fmtInt(value)} />}
+            </Card>
+
+            <Card className="span-2 hug" title="Recent job failures" subtitle="Newest first, from the API and the worker">
+              {!data.recentFailures.length ? <Empty icon="check" title="No failures in this window" /> : (
+                <div className="table-wrap scroll">
+                  <table>
+                    <thead><tr><th>Time</th><th>Job</th><th>File</th><th>Stage</th><th>Reason</th></tr></thead>
+                    <tbody>
+                      {data.recentFailures.map(row => (
+                        <tr key={`${row.job_id}-${row.timestamp}`}>
+                          <td className="mono" title={row.timestamp ? fmtDate(row.timestamp) : ''}>{row.timestamp ? fmtTime(row.timestamp, true) : '—'}</td>
+                          <td><a className="path-link" {...linkProps(`/jobs/${row.job_id}`)}><code>{row.job_id}</code></a></td>
+                          <td><span className="cell-truncate" title={row.file_name}>{row.file_name}</span></td>
+                          <td>{row.failure_stage === 'validation' ? 'API' : 'Worker'}</td>
+                          <td><code className="err-code">{row.failure_reason}</code></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+            <Card className="hug" title="Slowest jobs" subtitle="Longest processing, with time spent queued">
               {!data.slowest.length ? <Empty title="No completed jobs yet" /> : (
-                <ul className="slow-list">
-                  {data.slowest.map(row => (
-                    <li key={row.job_id}>
-                      <a {...linkProps(`/jobs/${row.job_id}`)}>
-                        <div title={row.timestamp ? fmtDate(row.timestamp) : ''}><span className="method">{(row.file_type || '').toUpperCase()}</span><code className="path">{row.job_id} · {row.file_name}</code></div>
-                        <div className="slow-meta"><b className={num(row.processing_duration_ms) > 5000 ? 'text-critical' : ''}>{fmtMs(row.processing_duration_ms)}</b></div>
-                      </a>
-                    </li>
-                  ))}
-                </ul>
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>Job</th><th className="num">Queued</th><th className="num">Processing</th></tr></thead>
+                    <tbody>
+                      {data.slowest.map(row => (
+                        <tr key={`${row.job_id}-${row.timestamp}`}>
+                          <td><a className="path-link" {...linkProps(`/jobs/${row.job_id}`)}><code>{row.job_id}</code></a><span className="cell-sub cell-truncate" title={row.file_name}>{row.file_name}</span></td>
+                          <td className="num">{fmtMs(row.queue_time_ms)}</td>
+                          <td className={`num ${num(row.processing_duration_ms) > 5000 ? 'text-critical' : ''}`}>{fmtMs(row.processing_duration_ms)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </Card>
           </div>

@@ -51,14 +51,16 @@ function useTheme() {
 // Reports both containers: the API answers the health check and relays the worker's last heartbeat.
 export function useHealth() {
   const [health, setHealth] = useState({ state: 'checking' });
-  const check = () => api('/api/health').then(data => setHealth({ state: data.worker?.status === 'online' ? 'online' : 'degraded', data })).catch(() => setHealth({ state: 'offline' }));
+  // "unknown" means no worker has ever written a heartbeat to this API's database, usually because only the API was started.
+  const check = () => api('/api/health').then(data => setHealth({ state: data.worker?.status === 'online' ? 'online' : data.worker?.status === 'unknown' ? 'noworker' : 'degraded', data })).catch(() => setHealth({ state: 'offline' }));
   useEffect(() => { check(); }, []);
   useInterval(check, 15000);
   return health;
 }
 function HealthPill({ health }) {
-  const text = { checking: 'Checking', online: 'API and worker online', degraded: 'Worker offline', offline: 'API unreachable' }[health.state];
-  return <span className={`health ${health.state}`} title={`Service status: ${text}`}><i />{text}</span>;
+  const text = { checking: 'Checking', online: 'API and worker online', degraded: 'Worker offline', noworker: 'No worker running', offline: 'API unreachable' }[health.state];
+  const hint = { degraded: 'The worker stopped sending heartbeats. Check docker compose ps or restart the worker.', noworker: 'No worker has connected to this API\'s database. Run "npm run worker" next to "npm start", or use docker compose up -d.' }[health.state];
+  return <span className={`health ${health.state === 'noworker' ? 'degraded' : health.state}`} title={hint || `Service status: ${text}`}><i />{text}</span>;
 }
 
 const NAV = [
@@ -104,7 +106,7 @@ export function Shell({ path, health, children, wide = false }) {
         </div>
       </header>
       <main className={wide ? 'page wide' : 'page'}>{children}</main>
-      <footer className="footer"><span>DocuFlow · API and worker containers observed through Splunk</span><span>Uploaded files are deleted once processed; only results are kept.</span></footer>
+      <footer className={wide ? 'footer wide' : 'footer'}><span>DocuFlow · API and worker containers observed through Splunk</span><span>Uploaded files are deleted once processed; only results are kept.</span></footer>
     </div>
   );
 }
